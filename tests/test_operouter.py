@@ -1,118 +1,137 @@
-import pytest
 import json
-from src.openrouter_client import OpenRouterClient
+
+import pytest
 from src.schemas import get_card_creation_schema, get_order_schema
 
 
 class TestOpenRouterFunctionCalling:
-	"""Интеграционные тесты с реальным OpenRouter API"""
+    """Интеграционные тесты с реальным OpenRouter API"""
 
-	@pytest.mark.integration
-	def test_natural_language_understanding(self, real_openrouter_client, test_cases):
-		"""Тестируем понимание естественного языка моделью"""
+    @pytest.mark.integration
+    def test_natural_language_understanding(self, real_openrouter_client, test_cases):
+        """Тестируем понимание естественного языка моделью"""
 
-		schemas = [get_card_creation_schema(), get_order_schema()]
+        schemas = [get_card_creation_schema(), get_order_schema()]
 
-		results = real_openrouter_client.test_natural_language_understanding(
-			test_cases=test_cases,
-			function_schemas=schemas
-		)
+        results = real_openrouter_client.test_natural_language_understanding(
+            test_cases=test_cases, function_schemas=schemas
+        )
 
-		print(f"\n📊 Результаты тестирования:")
-		print(f"Всего тестов: {results['total']}")
-		print(f"Пройдено: {results['passed']}")
-		print(f"Провалено: {results['failed']}")
+        print("\n📊 Результаты тестирования:")
+        print(f"Всего тестов: {results['total']}")
+        print(f"Пройдено: {results['passed']}")
+        print(f"Провалено: {results['failed']}")
 
-		# Выводим детали по неудачным тестам
-		for detail in results["details"]:
-			if detail["status"] != "passed":
-				print(f"\n❌ Провален: '{detail['query']}'")
-				if "reason" in detail:
-					print(f"   Причина: {detail['reason']}")
-				if detail["response"].get("message", {}).get("function_call"):
-					print(f"   Вызвана функция: {detail['response']['message']['function_call']['name']}")
-					print(f"   Аргументы: {detail['response']['message']['function_call']['arguments']}")
+        for detail in results["details"]:
+            if detail["status"] != "passed":
+                print(f"\n❌ Провален: '{detail['query']}'")
+                if "reason" in detail:
+                    print(f"   Причина: {detail['reason']}")
+                message = detail.get("response", {}).get("message", {})
+                tool_calls = message.get("tool_calls")
+                function_call = message.get("function_call")
+                if tool_calls and len(tool_calls) > 0:
+                    print(f"   Вызвана функция: {tool_calls[0]['function']['name']}")
+                    print(f"   Аргументы: {tool_calls[0]['function']['arguments']}")
+                elif function_call:
+                    print(f"   Вызвана функция: {function_call['name']}")
+                    print(f"   Аргументы: {function_call['arguments']}")
 
-		# Сохраняем результаты для анализа
-		with open("test_results.json", "w", encoding="utf-8") as f:
-			json.dump(results, f, ensure_ascii=False, indent=2)
+        with open("test_results.json", "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
 
-		# Требуем высокий процент успеха
-		success_rate = results["passed"] / results["total"] * 100
-		print(f"\n📈 Процент успеха: {success_rate:.1f}%")
+        success_rate = results["passed"] / results["total"] * 100
+        print(f"\n📈 Процент успеха: {success_rate:.1f}%")
+        assert success_rate >= 80.0, f"Слишком низкий процент успеха: {success_rate:.1f}%"
 
-		# В реальном проекте можно установить минимальный порог
-		assert success_rate >= 80.0, f"Слишком низкий процент успеха: {success_rate:.1f}%"
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "query, expected_name",
+        [
+            ("Создай карточку 'Финансы'", "Финансы"),
+            ("Нужна карточка под названием Маркетинг", "Маркетинг"),
+            ("Заведи карточку для задачи Разработка", "Разработка"),
+            ("Сделай карточку: Анализ данных", "Анализ данных"),
+        ],
+    )
+    def test_various_phrasings(self, real_openrouter_client, query, expected_name):
+        """Тестируем разные формулировки запросов"""
 
-	@pytest.mark.integration
-	@pytest.mark.parametrize("query, expected_name", [
-		("Создай карточку 'Финансы'", "Финансы"),
-		("Нужна карточка под названием Маркетинг", "Маркетинг"),
-		("Заведи карточку для задачи Разработка", "Разработка"),
-		("Сделай карточку: Анализ данных", "Анализ данных"),
-	])
-	def test_various_phrasings(self, real_openrouter_client, query, expected_name):
-		"""Тестируем разные формулировки запросов"""
+        schema = get_card_creation_schema()
 
-		schema = get_card_creation_schema()
+        response = real_openrouter_client.call_with_functions(
+            user_query=query, function_schemas=[schema], use_cache=True
+        )
 
-		response = real_openrouter_client.call_with_functions(
-			user_query=query,
-			function_schemas=[schema],
-			use_cache=True
-		)
+        assert "error" not in response, f"Ошибка API: {response.get('error')}"
 
-		assert "error" not in response, f"Ошибка API: {response.get('error')}"
+        message = response.get("message", {})
+        tool_calls = message.get("tool_calls")
+        function_call = message.get("function_call")
 
-		function_call = response["message"]["function_call"]
-		assert function_call is not None, "Модель не вызвала функцию"
-		assert function_call["name"] == "create_card"
-		assert function_call["arguments"]["name"] == expected_name
+        if tool_calls and len(tool_calls) > 0:
+            actual_function = tool_calls[0]["function"]["name"]
+            actual_arguments = tool_calls[0]["function"]["arguments"]
+        elif function_call:
+            actual_function = function_call["name"]
+            actual_arguments = function_call["arguments"]
+        else:
+            pytest.fail("Модель не вызвала функцию")
 
-	@pytest.mark.integration
-	def test_function_selection(self, real_openrouter_client):
-		"""Тестируем выбор правильной функции"""
+        assert actual_function == "create_card"
+        assert actual_arguments["name"] == expected_name
 
-		schemas = [get_card_creation_schema(), get_order_schema()]
+    @pytest.mark.integration
+    def test_function_selection(self, real_openrouter_client):
+        """Тестируем выбор правильной функции"""
 
-		# Запрос, который должен вызвать create_order
-		response = real_openrouter_client.call_with_functions(
-			user_query="Закажи 3 монитора для офиса",
-			function_schemas=schemas,
-			use_cache=True
-		)
+        schemas = [get_card_creation_schema(), get_order_schema()]
 
-		function_call = response["message"]["function_call"]
-		assert function_call["name"] == "create_order"
-		assert function_call["arguments"]["product_name"] == "мониторы"
-		assert function_call["arguments"]["quantity"] == 3
+        response = real_openrouter_client.call_with_functions(
+            user_query="Закажи 3 монитора для офиса",
+            function_schemas=schemas,
+            use_cache=True,
+        )
 
-	@pytest.mark.integration
-	def test_cache_mechanism(self, real_openrouter_client, tmp_path):
-		"""Тестируем механизм кеширования"""
+        message = response.get("message", {})
+        tool_calls = message.get("tool_calls")
+        function_call = message.get("function_call")
 
-		schema = get_card_creation_schema()
-		cache_dir = tmp_path / "cache"
+        if tool_calls and len(tool_calls) > 0:
+            actual_function = tool_calls[0]["function"]["name"]
+            actual_arguments = tool_calls[0]["function"]["arguments"]
+        elif function_call:
+            actual_function = function_call["name"]
+            actual_arguments = function_call["arguments"]
+        else:
+            pytest.fail("Модель не вызвала функцию")
 
-		# Первый вызов - должен сохранить в кеш
-		response1 = real_openrouter_client.call_with_functions(
-			user_query="Тест кеширования",
-			function_schemas=[schema],
-			use_cache=True,
-			cache_dir=str(cache_dir)
-		)
+        assert actual_function == "create_order"
+        assert actual_arguments["product_name"] == "мониторы"
+        assert actual_arguments["quantity"] == 3
 
-		# Второй вызов - должен загрузить из кеша
-		response2 = real_openrouter_client.call_with_functions(
-			user_query="Тест кеширования",
-			function_schemas=[schema],
-			use_cache=True,
-			cache_dir=str(cache_dir)
-		)
+    @pytest.mark.integration
+    def test_cache_mechanism(self, real_openrouter_client, tmp_path):
+        """Тестируем механизм кеширования"""
 
-		# Проверяем, что ответы идентичны
-		assert response1 == response2
+        schema = get_card_creation_schema()
+        cache_dir = tmp_path / "cache"
 
-		# Проверяем, что файл кеша создан
-		cache_files = list(cache_dir.glob("*.json"))
-		assert len(cache_files) == 1
+        response1 = real_openrouter_client.call_with_functions(
+            user_query="Тест кеширования",
+            function_schemas=[schema],
+            use_cache=True,
+            cache_dir=str(cache_dir),
+        )
+
+        response2 = real_openrouter_client.call_with_functions(
+            user_query="Тест кеширования",
+            function_schemas=[schema],
+            use_cache=True,
+            cache_dir=str(cache_dir),
+        )
+
+        assert response1 == response2
+
+        cache_files = list(cache_dir.glob("*.json"))
+        assert len(cache_files) == 1

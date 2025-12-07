@@ -1,0 +1,48 @@
+[project]
+name = "function-api-calling"
+version = "0.1.0"
+description = "Тесты и функции для API"
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+where = ["src", "configurates"]
+
+[tool.black]
+line-length = 96
+target-version = ['py312']
+skip-string-normalization = false
+include = '\.pyi?$'
+
+[tool.ruff]
+# Максимальная длина строки (совпадает с black)
+line-length = 100
+target-version = "py312"
+fix = true
+
+
+# Исключаем лишние папки
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "dist",
+    "migrations",
+    "__pycache__",
+    "test_results",
+    "snapshots"
+]
+
+# Включаем основные правила:
+# E — ошибки стиля (PEP8)
+# F — ошибки компиляции (flake8)
+# I — импорты (isort)
+# B — best practices (bugbear)
+# UP — modern Python (pyupgrade)
+preview = true
+
+# Игнорируем правила, которые конфликтуют с black
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "E203"]
+
+

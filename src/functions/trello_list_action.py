@@ -1,68 +1,56 @@
-import sys
 import os
 
-# Добавляем родительскую директорию в путь Python
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(parent_dir)
-sys.path.insert(0, project_root)
+from src.function_register import function
 
-from config import API_KEY_TRELLO, API_TOKEN_TRELLO
-from src.function_register import get_registry, function
-
-
-# Получаем реестр
-registry = get_registry()
-
-
-TRELLO_LIST_ACTION_SCHEMA={
-  "name": "trello_list_action",
-  "description": "Выполняет действия над списками Trello: создание, получение и обновление. Универсальный маршрутизатор для Trello API.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "action": {
-        "type": "string",
-        "description": "Тип действия над списком Trello.",
-        "enum": ["create", "get", "update"]
-      },
-      "id_board": {
-        "type": "string",
-        "description": "ID доски Trello. Используется для create и update."
-      },
-      "name_board": {
-        "type": "string",
-        "description": "Имя доски Trello, если неизвестен id_board."
-      },
-      "id_list": {
-        "type": "string",
-        "description": "ID списка Trello. Используется для get и update."
-      },
-      "name_list": {
-        "type": "string",
-        "description": "Имя списка Trello, если неизвестен id_list."
-      },
-      "new_name_list": {
-        "type": "string",
-        "description": "Новое имя списка. Используется при create и update."
-      },
-      "closed": {
-        "type": "string",
-        "description": "Архивировать (true) или разархивировать (false) список.",
-        "enum": ["true", "false"]
-      },
-      "api_key_trello": {
-        "type": "string",
-        "description": "Ключ доступа Trello API. Может быть передан явно или подтянут из окружения."
-      },
-      "api_token_trello": {
-        "type": "string",
-        "description": "Токен доступа Trello API. Может быть передан явно или подтянут из окружения."
-      }
+TRELLO_LIST_ACTION_SCHEMA = {
+    "name": "trello_list_action",
+    "description": "Выполняет действия над списками Trello: создание, получение и обновление. Универсальный маршрутизатор для Trello API.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Тип действия над списком Trello.",
+                "enum": ["create", "get", "update"],
+            },
+            "id_board": {
+                "type": "string",
+                "description": "ID доски Trello. Используется для create и update.",
+            },
+            "name_board": {
+                "type": "string",
+                "description": "Имя доски Trello, если неизвестен id_board.",
+            },
+            "id_list": {
+                "type": "string",
+                "description": "ID списка Trello. Используется для get и update.",
+            },
+            "name_list": {
+                "type": "string",
+                "description": "Имя списка Trello, если неизвестен id_list.",
+            },
+            "new_name_list": {
+                "type": "string",
+                "description": "Новое имя списка. Используется при create и update.",
+            },
+            "closed": {
+                "type": "string",
+                "description": "Архивировать (true) или разархивировать (false) список.",
+                "enum": ["true", "false"],
+            },
+            "api_key_trello": {
+                "type": "string",
+                "description": "Ключ доступа Trello API. Может быть передан явно или подтянут из окружения.",
+            },
+            "api_token_trello": {
+                "type": "string",
+                "description": "Токен доступа Trello API. Может быть передан явно или подтянут из окружения.",
+            },
+        },
+        "required": ["action"],
     },
-    "required": ["action"]
-  }
 }
+
 
 @function(TRELLO_LIST_ACTION_SCHEMA)
 def trello_list_action(arguments: dict) -> str:
@@ -129,10 +117,8 @@ def trello_list_action(arguments: dict) -> str:
     """
 
     import json
-    import requests
-    from typing import Optional, Dict, List
 
-    import os
+    import requests
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -142,26 +128,20 @@ def trello_list_action(arguments: dict) -> str:
         pass
 
     API_KEY_TRELLO = arguments.get("api_key_trello") or os.getenv("API_KEY_TRELLO")
-    API_TOKEN_TRELLO = arguments.get("api_token_trello") or os.getenv(
-        "API_TOKEN_TRELLO"
-    )
+    API_TOKEN_TRELLO = arguments.get("api_token_trello") or os.getenv("API_TOKEN_TRELLO")
 
     if not API_KEY_TRELLO:
         raise TrelloListError(
-            json.dumps(
-                {"error": "Missing 'API_KEY_TRELLO not found'"}, ensure_ascii=False
-            )
+            json.dumps({"error": "Missing 'API_KEY_TRELLO not found'"}, ensure_ascii=False)
         )
     if not API_TOKEN_TRELLO:
         raise TrelloListError(
-            json.dumps(
-                {"error": "Missing 'API_TOKEN_TRELLO not found'"}, ensure_ascii=False
-            )
+            json.dumps({"error": "Missing 'API_TOKEN_TRELLO not found'"}, ensure_ascii=False)
         )
 
     class TrelloHelper:
         @staticmethod
-        def get_boards(name_board: str) -> Dict:
+        def get_boards(name_board: str) -> dict:
             if not name_board:
                 raise TrelloListError(
                     json.dumps({"error": "Missing 'name_board'"}, ensure_ascii=False)
@@ -184,8 +164,8 @@ def trello_list_action(arguments: dict) -> str:
                         "id": b["id"],
                         "name": b["name"],
                         "lists": [
-                            {"id": l["id"], "name": l["name"], "pos": l["pos"]}
-                            for l in b.get("lists", [])
+                            {"id": ls["id"], "name": ls["name"], "pos": ls["pos"]}
+                            for ls in b.get("lists", [])
                         ],
                     }
                     for b in res
@@ -196,15 +176,13 @@ def trello_list_action(arguments: dict) -> str:
 
             if not board:
                 raise TrelloListError(
-                    json.dumps(
-                        {"error": f"Board '{name_board}' not found"}, ensure_ascii=False
-                    )
+                    json.dumps({"error": f"Board '{name_board}' not found"}, ensure_ascii=False)
                 )
 
             return board
 
         @staticmethod
-        def get_lists(name_list: str, id_board: str, lists: List) -> Dict:
+        def get_lists(name_list: str, id_board: str, lists: list) -> dict:
             if not name_list:
                 raise TrelloListError(
                     json.dumps({"error": "Missing 'name_list'"}, ensure_ascii=False)
@@ -217,17 +195,13 @@ def trello_list_action(arguments: dict) -> str:
 
             if not lists:
                 raise TrelloListError(
-                    json.dumps(
-                        {"error": f"Lists not found in {id_board}"}, ensure_ascii=False
-                    )
+                    json.dumps({"error": f"Lists not found in {id_board}"}, ensure_ascii=False)
                 )
 
-            flist = next((l for l in lists if l["name"] == name_list), None)
+            flist = next((ls for ls in lists if ls["name"] == name_list), None)
             if not flist:
                 raise TrelloListError(
-                    json.dumps(
-                        {"error": f"List '{name_list}' not found"}, ensure_ascii=False
-                    )
+                    json.dumps({"error": f"List '{name_list}' not found"}, ensure_ascii=False)
                 )
 
             # get_one_list = lambda l, c: (l[count_list - 1] if c is not None and 0 <= c - 1 < len(l) else l[0])
@@ -259,12 +233,10 @@ def trello_list_action(arguments: dict) -> str:
 
     #           -----------------------------------------------------------------------------------------------            #
 
-    action: Optional[str] = arguments.get("action")
+    action: str | None = arguments.get("action")
     if action is None or action not in {"create", "get", "update"}:
         raise TrelloListError(
-            json.dumps(
-                {"error": f"Unknown or missing action '{action}'"}, ensure_ascii=False
-            )
+            json.dumps({"error": f"Unknown or missing action '{action}'"}, ensure_ascii=False)
         )
 
     base_url = "https://api.trello.com/1/lists"
@@ -307,7 +279,7 @@ def trello_list_action(arguments: dict) -> str:
 
     if not id_board:
         raise TrelloListError(
-            json.dumps({"error": f"не удалось вытянуть id Доски"}, ensure_ascii=False)
+            json.dumps({"error": "не удалось вытянуть id Доски"}, ensure_ascii=False)
         )
 
     if action in ["get", "update"]:
@@ -319,9 +291,7 @@ def trello_list_action(arguments: dict) -> str:
 
         if not id_list:
             raise TrelloListError(
-                json.dumps(
-                    {"error": f"не удалось вытянуть id Списка"}, ensure_ascii=False
-                )
+                json.dumps({"error": "не удалось вытянуть id Списка"}, ensure_ascii=False)
             )
 
     action_url = f"{base_url}/{id_list}"
@@ -369,7 +339,3 @@ def trello_list_action(arguments: dict) -> str:
     result = TrelloHelper.send(route["method"], route["url"], params=route["params"])
 
     return json.dumps(result, ensure_ascii=False, indent=2)
-
-SCHEMAS = {
-	"trello_list_action": TRELLO_LIST_ACTION_SCHEMA,
-}

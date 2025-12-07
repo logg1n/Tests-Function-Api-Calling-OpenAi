@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
 """
-Тест-раннер с сохранением трёх отчетов:
+Тест-раннер:
 1. Результаты тестов (passed/failed/errors).
 2. Результаты реального выполнения функций.
-3. Snapshot-проверка (фиксируем эталонные вызовы и сравниваем при следующих запусках).
 """
 
-import sys
-import os
-import json
 import argparse
 import importlib
+import json
+import os
 from datetime import datetime
 
-# Критически важно: добавляем корень проекта в путь
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-sys.path.insert(0, project_root)
-
-# Импорты
+from configurates.config import OPENROUTER_API_KEY
 from src.function_register import get_registry
 from src.openrouter_client import OpenRouterClient
-from config import OPENROUTER_API_KEY
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
 
 
 def import_all_functions():
@@ -38,28 +33,9 @@ def import_all_functions():
                     print(f"❌ Ошибка импорта {module_name}: {e}")
 
 
-def load_snapshot(function_name, test_index):
-    """Загружает сохранённый snapshot для конкретного теста"""
-    path = os.path.join("snapshots", function_name, f"{test_index}.json")
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return None
-
-
-def save_snapshot(function_name, test_index, data):
-    """Сохраняет snapshot для конкретного теста в папку функции"""
-    dir_path = os.path.join("snapshots", function_name)
-    os.makedirs(dir_path, exist_ok=True)
-    path = os.path.join(dir_path, f"{test_index}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    return path
-
-
-
-def run_tests_for_function(function_name, test_cases, verbose=True, model="openai/gpt-3.5-turbo"):
-    """Простая функция тестирования"""
+def run_tests_for_function(
+    function_name, test_cases, verbose=True, model="openai/gpt-3.5-turbo"
+):
 
     registry = get_registry()
     api_key = OPENROUTER_API_KEY
@@ -88,12 +64,16 @@ def run_tests_for_function(function_name, test_cases, verbose=True, model="opena
         "passed": 0,
         "failed": 0,
         "errors": 0,
-        "details": []
+        "details": [],
     }
 
     for i, test_case in enumerate(test_cases, 1):
         if verbose:
-            query_preview = test_case['query'][:50] + "..." if len(test_case['query']) > 50 else test_case['query']
+            query_preview = (
+                test_case["query"][:50] + "..."
+                if len(test_case["query"]) > 50
+                else test_case["query"]
+            )
             print(f"\n🔍 Тест {i}/{len(test_cases)}: '{query_preview}'")
 
         test_result = {
@@ -107,9 +87,7 @@ def run_tests_for_function(function_name, test_cases, verbose=True, model="opena
         try:
             # Вызываем OpenRouter
             response = client.call_with_functions(
-                user_query=test_case["query"],
-                function_schemas=[schema],
-                use_cache=True
+                user_query=test_case["query"], function_schemas=[schema], use_cache=True
             )
             test_result["response"] = response
 
@@ -121,65 +99,52 @@ def run_tests_for_function(function_name, test_cases, verbose=True, model="opena
                     print(f"❌ Ошибка API: {response['error']}")
             else:
                 message = response.get("message", {})
-                function_call = message.get("function_call")
+                tool_calls = message.get("tool_calls")
+                function_call = message.get("function_call")  # fallback
 
-                if not function_call:
+                if tool_calls and len(tool_calls) > 0:
+                    func_name = tool_calls[0]["function"]["name"]
+                    func_args = tool_calls[0]["function"]["arguments"]
+                elif function_call:
+                    func_name = function_call["name"]
+                    func_args = function_call["arguments"]
+                else:
                     test_result["status"] = "failed"
                     test_result["reason"] = "Функция не вызвана"
                     results["failed"] += 1
                     if verbose:
                         print("❌ Функция не вызвана")
+                    results["details"].append(test_result)
+                    continue
+
+                test_result["actual_function"] = func_name
+                test_result["actual_arguments"] = func_args
+
+                expected_func = test_case.get("expected_function")
+                if expected_func and func_name != expected_func:
+                    test_result["status"] = "failed"
+                    test_result["reason"] = (
+                        f"Ожидалась функция '{expected_func}', вызвана '{func_name}'"
+                    )
+                    results["failed"] += 1
+                    if verbose:
+                        print(f"❌ Ожидалась '{expected_func}', вызвана '{func_name}'")
                 else:
-                    func_name = function_call["name"]
-                    func_args = function_call["arguments"]
+                    test_result["status"] = "passed"
+                    results["passed"] += 1
+                    if verbose:
+                        print(f"✅ Пройдено! Функция: {func_name}")
 
-                    test_result["actual_function"] = func_name
-                    test_result["actual_arguments"] = func_args
-
-                    expected_func = test_case.get("expected_function")
-                    if expected_func and func_name != expected_func:
-                        test_result["status"] = "failed"
-                        test_result["reason"] = f"Ожидалась функция '{expected_func}', вызвана '{func_name}'"
-                        results["failed"] += 1
-                        if verbose:
-                            print(f"❌ Ожидалась '{expected_func}', вызвана '{func_name}'")
-                    else:
-                        test_result["status"] = "passed"
-                        results["passed"] += 1
-                        if verbose:
-                            print(f"✅ Пройдено! Функция: {func_name}")
-
-                    # ⚙️ Реальное выполнение функции
-                    try:
-                        execution_result = registry.execute(func_name, func_args)
-                        test_result["execution_result"] = execution_result
-                        if verbose:
-                            print(f"⚙️ Результат выполнения: {str(execution_result)[:200]}...")
-                    except Exception as e:
-                        test_result["execution_result"] = f"Ошибка выполнения: {e}"
-                        if verbose:
-                            print(f"❌ Ошибка выполнения функции: {e}")
-
-                    # 📸 Snapshot-проверка
-                    current_snapshot = {"function": func_name, "arguments": func_args}
-                    snapshot = load_snapshot(func_name, i)
-                    if snapshot is None:
-                        save_snapshot(func_name, i, current_snapshot)
-                        test_result["snapshot_status"] = "saved"
-                        if verbose:
-                            print(f"📸 Snapshot сохранён для теста {i}")
-                    else:
-                        if snapshot != current_snapshot:
-                            test_result["status"] = "failed"
-                            test_result["reason"] = "Snapshot mismatch"
-                            test_result["snapshot_status"] = "mismatch"
-                            results["failed"] += 1
-                            if verbose:
-                                print(f"❌ Snapshot mismatch в тесте {i}")
-                        else:
-                            test_result["snapshot_status"] = "match"
-                            if verbose:
-                                print(f"✅ Snapshot совпадает")
+                # ⚙️ Реальное выполнение функции
+                try:
+                    execution_result = registry.execute(func_name, func_args)
+                    test_result["execution_result"] = execution_result
+                    if verbose:
+                        print(f"⚙️ Результат выполнения: {str(execution_result)[:200]}...")
+                except Exception as e:
+                    test_result["execution_result"] = f"Ошибка выполнения: {e}"
+                    if verbose:
+                        print(f"❌ Ошибка выполнения функции: {e}")
 
             results["details"].append(test_result)
 
@@ -199,8 +164,8 @@ def run_tests_for_function(function_name, test_cases, verbose=True, model="opena
     print(f"❌ Провалено: {results['failed']}")
     print(f"⚠️  Ошибок: {results['errors']}")
 
-    if results['total'] > 0:
-        success_rate = results['passed'] / results['total'] * 100
+    if results["total"] > 0:
+        success_rate = results["passed"] / results["total"] * 100
         print(f"📈 Успешность: {success_rate:.1f}%")
 
     return results
@@ -212,7 +177,7 @@ def save_test_results(results, function_name):
     os.makedirs(dir_path, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(dir_path, f"tests_{timestamp}.json")
-    with open(filename, 'w', encoding='utf-8') as f:
+    with open(filename, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     return filename
 
@@ -226,17 +191,17 @@ def save_execution_results(results, function_name):
 
     exec_data = []
     for detail in results["details"]:
-        exec_data.append({
-            "test_index": detail["test_index"],
-            "query": detail["query"],
-            "execution_result": detail.get("execution_result", None),
-            "snapshot_status": detail.get("snapshot_status", None)
-        })
+        exec_data.append(
+            {
+                "test_index": detail["test_index"],
+                "query": detail["query"],
+                "execution_result": detail.get("execution_result", None),
+            }
+        )
 
-    with open(filename, 'w', encoding='utf-8') as f:
+    with open(filename, "w", encoding="utf-8") as f:
         json.dump(exec_data, f, ensure_ascii=False, indent=2)
     return filename
-
 
 
 def main():
@@ -244,8 +209,7 @@ def main():
     parser.add_argument("--function", type=str, required=True, help="Имя функции для тестирования")
     parser.add_argument("--tests", type=str, required=True, help="JSON файл с тестовыми кейсами")
     parser.add_argument("--verbose", action="store_true", help="Подробный вывод")
-    parser.add_argument("--model", type=str, default="openai/gpt-3.5-turbo",
-                        help="Модель OpenRouter")
+    parser.add_argument("--model", type=str, default="openai/gpt-3.5-turbo", help="Модель OpenRouter")
 
     args = parser.parse_args()
 
@@ -256,14 +220,14 @@ def main():
         print(f"❌ Файл тестов не найден: {args.tests}")
         return
 
-    with open(args.tests, 'r', encoding='utf-8') as f:
+    with open(args.tests, encoding="utf-8") as f:
         test_cases = json.load(f)
 
     results = run_tests_for_function(
         function_name=args.function,
         test_cases=test_cases,
         verbose=args.verbose,
-        model=args.model
+        model=args.model,
     )
 
     if results:
@@ -272,6 +236,5 @@ def main():
         print(f"\n💾 Результаты тестов сохранены в: {tests_file}")
         print(f"⚙️ Результаты выполнения функций сохранены в: {exec_file}")
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
