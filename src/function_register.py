@@ -1,14 +1,14 @@
 import importlib
-import inspect
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from src.function_validators import validate_schema, validate_signature
+
 
 @dataclass
 class FunctionInfo:
-    """Информация о функции"""
-
     name: str
     func: Callable[[dict[str, Any]], str]
     schema: dict[str, Any]
@@ -16,116 +16,57 @@ class FunctionInfo:
     module: str = ""
 
 
-class FunctionRegister:
-    """Универсальный реестр функций"""
+def import_all_functions(project_root: str) -> None:
+    functions_dir = os.path.join(project_root, "src", "functions")
+    if os.path.exists(functions_dir):
+        for file in os.listdir(functions_dir):
+            if file.endswith(".py") and not file.startswith("__"):
+                module_name = f"src.functions.{file[:-3]}"
+                try:
+                    importlib.import_module(module_name)
+                    print(f"📥 Импортирован модуль: {module_name}")
+                except Exception as e:
+                    print(f"❌ Ошибка импорта {module_name}: {e}")
 
+
+class FunctionRegistry:
     def __init__(self):
         self._functions: dict[str, FunctionInfo] = {}
 
-    def register_function(
-        self,
-        function: Callable[[dict[str, Any]], str],
-        schema: dict[str, Any],
-        name: str | None = None,
-        description: str | None = None,
-    ) -> str:
-        func_name = name or function.__name__
-
-        self._validate_function_signature(function)
-        self._validate_schema(schema, func_name)
+    def register(self, func: Callable, schema: dict[str, Any], name: str | None = None):
+        func_name = name or func.__name__
+        validate_signature(func)
+        validate_schema(schema, func_name)
 
         self._functions[func_name] = FunctionInfo(
             name=func_name,
-            func=function,
+            func=func,
             schema=schema,
-            description=description or schema.get("description", ""),
-            module=function.__module__,
+            description=schema.get("description", ""),
+            module=func.__module__,
         )
-        return func_name
+        return func
 
-    def register_from_module(self, module_name: str) -> list[str]:
-        """Регистрирует все функции из модуля по словарю SCHEMAS"""
-        try:
-            module = importlib.import_module(module_name)
-        except ImportError as e:
-            raise ValueError(f"Не удалось импортировать модуль {module_name}: {e}") from e
-
-        if not hasattr(module, "SCHEMAS"):
-            raise ValueError(f"Модуль {module_name} не содержит словарь SCHEMAS")
-
-        registered = []
-        for func_name, schema in module.SCHEMAS.items():
-            if hasattr(module, func_name):
-                func = getattr(module, func_name)
-                if callable(func):
-                    self.register_function(func, schema, func_name)
-                    registered.append(func_name)
-        return registered
-
-    def get_function(self, name: str) -> Callable[[dict[str, Any]], str]:
-        if name not in self._functions:
-            raise KeyError(f"Функция '{name}' не найдена")
-        return self._functions[name].func
+    def execute(self, name: str, args: dict[str, Any]) -> str:
+        return self._functions[name].func(args)
 
     def get_schema(self, name: str) -> dict[str, Any]:
         if name not in self._functions:
-            raise KeyError(f"Схема для функции '{name}' не найдена")
-        return self._functions[name].schema.copy()
-
-    def get_all_schemas(self) -> list[dict[str, Any]]:
-        return [info.schema for info in self._functions.values()]
-
-    def get_function_info(self, name: str) -> FunctionInfo:
-        if name not in self._functions:
-            raise KeyError(f"Функция '{name}' не найдена")
-        return self._functions[name]
+            raise KeyError(f"Функция '{name}' не найдена в реестре")
+        return self._functions[name].schema
 
     def list_functions(self) -> list[str]:
         return list(self._functions.keys())
 
-    def execute(self, function_name: str, arguments: dict[str, Any]) -> str:
-        func = self.get_function(function_name)
-        return func(arguments)
 
-    def _validate_function_signature(self, func: Callable):
-        sig = inspect.signature(func)
-        params = list(sig.parameters.values())
-        if len(params) != 1:
-            raise ValueError(
-                f"Функция {func.__name__} должна принимать ровно 1 аргумент, получено {len(params)}"
-            )
-
-    def _validate_schema(self, schema: dict[str, Any], func_name: str):
-        required_fields = ["name", "description", "parameters"]
-        for field in required_fields:
-            if field not in schema:
-                raise ValueError(
-                    f"Схема для {func_name} не содержит обязательное поле '{field}'"
-                )
-        if schema["name"] != func_name:
-            raise ValueError(
-                f"Имя в схеме '{schema['name']}' не соответствует имени функции '{func_name}'"
-            )
-        params = schema["parameters"]
-        if not isinstance(params, dict) or params.get("type") != "object":
-            raise ValueError("Поле 'parameters' должно быть объектом с type='object'")
-        if "properties" not in params:
-            raise ValueError("Схема должна содержать 'parameters.properties'")
-
-
-# Глобальный экземпляр
-_registry = FunctionRegister()
-
-
-def get_registry() -> FunctionRegister:
-    return _registry
+# глобальный реестр
+registry = FunctionRegistry()
 
 
 def function(schema: dict[str, Any], name: str | None = None):
-    """Декоратор для регистрации функции"""
+    """Единый декоратор для регистрации функции"""
 
     def decorator(func: Callable[[dict[str, Any]], str]):
-        _registry.register_function(func, schema, name or func.__name__)
-        return func
+        return registry.register(func, schema, name)
 
     return decorator
