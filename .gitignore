@@ -40,3 +40,5 @@ Thumbs.db
 htmlcov/
 .cache/
 pytest_cache/
+
+archive/
