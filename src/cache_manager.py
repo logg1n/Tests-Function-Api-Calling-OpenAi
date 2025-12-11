@@ -14,8 +14,6 @@ class CacheManager:
     def _make_key(self, key: str) -> str:
         return hashlib.sha256(key.encode()).hexdigest()
 
-    import json
-
     def get(self, key: str) -> dict[str, Any] | None:
         if not self.enabled:
             return None
