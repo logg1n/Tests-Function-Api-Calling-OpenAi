@@ -10,7 +10,6 @@ from src.cache_manager import CacheManager
 class OpenRouterClient:
     def __init__(
         self,
-        api_key: str | None = None,
         base_url: str = "https://openrouter.ai/api/v1",
         model: str = "openai/gpt-3.5-turbo",
     ):
@@ -18,6 +17,7 @@ class OpenRouterClient:
         self.client = OpenAI(base_url=base_url, api_key=self.api_key)
         self.model = model
         self.cache = CacheManager(enabled=USE_CACHE)
+        self.role = "Ты ассистент с поддержкой tools."
 
     def call_with_functions(
         self,
@@ -28,18 +28,16 @@ class OpenRouterClient:
     ) -> dict[str, Any]:
         key = f"{user_query}:{json.dumps(function_schemas, sort_keys=True, ensure_ascii=False)}"
 
-        # пробуем достать из кэша
         cached = self.cache.get(key)
         if cached:
             return cached
 
-        # реальный вызов
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "Ты ассистент с поддержкой tools."},
-                {"role": "user", "content": user_query},
-            ],
+				{"role": "system", "content": self.role},
+				{"role": "user", "content": user_query},
+			],
             tools=[{"type": "function", "function": f} for f in function_schemas],
             tool_choice="auto",
             temperature=temperature,
