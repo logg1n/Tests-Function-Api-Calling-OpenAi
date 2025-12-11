@@ -3,7 +3,7 @@ import json
 import os
 import traceback
 
-from src.function_register import import_all_functions, registry
+from src.function_register import FunctionRegistry
 from src.openrouter_client import OpenRouterClient
 
 
@@ -16,7 +16,7 @@ def save_test_results(results, function_name: str):
 
 def run_tests_for_function(args, test_cases):
     project_root = os.path.dirname(os.path.dirname(__file__))  # корень проекта
-    import_all_functions(project_root)
+    FunctionRegistry.import_functions(project_root)
 
     client = OpenRouterClient()
     results = {"passed": 0, "failed": 0, "errors": 0, "details": []}
@@ -25,15 +25,15 @@ def run_tests_for_function(args, test_cases):
     schemas = []
     for func in args.function:
         try:
-            schemas.append(registry.get_schema(func))
+            schemas.append(FunctionRegistry.get_schema(func))
             print(f"📥 Импортирована схема функции: {func}")
         except KeyError:
             print(f"❌ Функция '{func}' не найдена в реестре")
 
     for i, test_case in enumerate(test_cases, 1):
         query_preview = (
-            test_case["query"][:50] + "..."
-            if len(test_case["query"]) > 50
+            test_case["query"][:500] + "..."
+            if len(test_case["query"]) > 500
             else test_case["query"]
         )
         print(f"\n🔍 Тест {i}/{len(test_cases)}: '{query_preview}'")
@@ -47,7 +47,6 @@ def run_tests_for_function(args, test_cases):
         }
 
         try:
-            # Вызов модели с несколькими схемами
             response = client.call_with_functions(
                 user_query=test_case["query"], function_schemas=schemas
             )
@@ -61,7 +60,7 @@ def run_tests_for_function(args, test_cases):
             else:
                 message = response.get("message", {})
                 tool_calls = message.get("tool_calls")
-                function_call = message.get("function_call")  # fallback
+                function_call = message.get("function_call")
 
                 if not tool_calls and not function_call:
                     test_result["status"] = "failed"
@@ -71,7 +70,6 @@ def run_tests_for_function(args, test_cases):
                     results["details"].append(test_result)
                     continue
 
-                # Обработка цепочки вызовов
                 actual_chain = []
                 execution_chain = []
 
@@ -84,7 +82,7 @@ def run_tests_for_function(args, test_cases):
                         actual_chain.append({"function": func_name, "arguments": func_args})
 
                         try:
-                            execution_result = registry.execute(func_name, func_args)
+                            execution_result = FunctionRegistry.execute(func_name, func_args)
                             execution_chain.append(
                                 {"function": func_name, "result": execution_result}
                             )
@@ -101,7 +99,7 @@ def run_tests_for_function(args, test_cases):
                     print(f"➡️ Вызов: {func_name}({func_args})")
                     actual_chain.append({"function": func_name, "arguments": func_args})
                     try:
-                        execution_result = registry.execute(func_name, func_args)
+                        execution_result = FunctionRegistry.execute(func_name, func_args)
                         execution_chain.append(
                             {"function": func_name, "result": execution_result}
                         )
@@ -115,7 +113,6 @@ def run_tests_for_function(args, test_cases):
                 test_result["actual_chain"] = actual_chain
                 test_result["execution_chain"] = execution_chain
 
-                # Проверка ожидаемой первой функции
                 expected_func = test_case.get("expected_function")
                 if expected_func and (
                     len(actual_chain) == 0 or actual_chain[0]["function"] != expected_func
@@ -133,7 +130,6 @@ def run_tests_for_function(args, test_cases):
                     results["passed"] += 1
                     print(f"✅ Первый вызов совпал: {expected_func}")
 
-                # Проверка next_function (если задана в suite)
                 expected_next = test_case.get("next_function")
                 if expected_next:
                     if (
