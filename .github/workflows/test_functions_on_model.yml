@@ -18,11 +18,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Чекаутим репозиторий с функцией (тот, где лежат w.py, w.json, w.yaml)
       - name: Checkout function repo
         uses: actions/checkout@v4
 
-      # Чекаутим репозиторий с test_runner.py и pyproject.toml
       - name: Checkout test-functions repo
         uses: actions/checkout@v4
         with:
@@ -46,7 +44,7 @@ jobs:
         working-directory: ${{ inputs.checkout_path }}
         run: |
           base="${{ inputs.function_name }}"
-          python test_runner.py \
+          uv run python test_runner.py \
             --function "../$base.py" \
             --schema "../$base.json" \
             --tests "../$base.yaml"
