@@ -12,6 +12,10 @@ on:
         required: false
         default: "test-functions_on_model"
         type: string
+    secrets:
+      OPENROUTER_API_KEY:
+        description: "API ключ для OpenRouter"
+        required: true
 
 jobs:
   run-tests:

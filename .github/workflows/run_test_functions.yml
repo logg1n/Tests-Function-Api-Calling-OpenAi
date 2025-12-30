@@ -1,7 +1,7 @@
 name: Run Function Tests
 
 on:
-  workflow_dispatch:  
+  workflow_dispatch:
 
 jobs:
   call-tests:
@@ -9,3 +9,5 @@ jobs:
     with:
       function_name: "w"
       checkout_path: "runner-code"
+    secrets:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
