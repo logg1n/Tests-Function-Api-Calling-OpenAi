@@ -42,6 +42,8 @@ jobs:
 
       - name: Run suite
         working-directory: ${{ inputs.checkout_path }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           base="${{ inputs.function_name }}"
           uv run python test_runner.py \
