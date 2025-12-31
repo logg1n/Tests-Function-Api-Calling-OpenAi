@@ -9,7 +9,6 @@ on:
         type: string
     secrets:
       OPENROUTER_API_KEY:
-        description: "API ключ для OpenRouter"
         required: true
 
 jobs:
@@ -17,11 +16,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout function repo
         uses: actions/checkout@v4
 
+      - name: Checkout docker/tests repo
+        uses: actions/checkout@v4
+        with:
+          repository: Smaipl/Tests-Function-Api-Calling-OpenAi
+          path: tests-repo
+
       - name: Build Docker image
-        run: docker build -t function-tests .
+        run: docker build -t function-tests tests-repo
 
       - name: Run tests in Docker
         env:
