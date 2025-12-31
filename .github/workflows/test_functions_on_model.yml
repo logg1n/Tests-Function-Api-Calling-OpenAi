@@ -33,6 +33,12 @@ jobs:
           cd tests-repo
           docker build -t function-tests .
 
+      # Проверяем виртуальное окружение
+      - name: Test virtual environment
+        run: |
+          docker run --rm function-tests /app/.venv/bin/python -c "import yaml; print('yaml available')"
+          docker run --rm function-tests /app/.venv/bin/python -c "import openai; print('openai available')"
+
       # Запускаем контейнер и монтируем код из репо А внутрь
       - name: Run tests in Docker
         env:
@@ -42,7 +48,7 @@ jobs:
             -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
             -v "$GITHUB_WORKSPACE:/function_code" \
             function-tests \
-            python test_runner.py \
+            /app/.venv/bin/python test_runner.py \
               --function "/function_code/${{ inputs.function_name }}.py" \
               --schema "/function_code/${{ inputs.function_name }}.json" \
               --tests "/function_code/${{ inputs.function_name }}.yaml"
