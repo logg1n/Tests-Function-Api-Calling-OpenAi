@@ -14,4 +14,4 @@ RUN uv sync || true
 # Скопируем код
 COPY . .
 
-CMD ["python", "test_runner.py"]
+CMD ["/app/.venv/bin/python", "test_runner.py"]
