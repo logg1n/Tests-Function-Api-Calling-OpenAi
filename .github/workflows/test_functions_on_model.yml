@@ -49,11 +49,14 @@ jobs:
             -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
             -e GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" \
             -v "$GITHUB_WORKSPACE:/function_code" \
+            -v "$GITHUB_WORKSPACE:/results" \
             function-tests \
             /app/.venv/bin/python test_runner.py \
               --function "/function_code/${{ inputs.function_name }}.py" \
               --schema "/function_code/${{ inputs.function_name }}.json" \
-              --tests "/function_code/${{ inputs.function_name }}.yaml"
+              --tests "/function_code/${{ inputs.function_name }}.yaml" \
+              --output "/results/test_results.json"
+
 
       # Сохраняем артефакт для скачивания
       - name: Upload test results
