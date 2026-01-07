@@ -10,40 +10,45 @@ on:
     secrets:
       OPENROUTER_API_KEY:
         required: true
+      ADDITIONAL_SECRETS:
+        required: false
+        description: "Дополнительные секреты в формате JSON"
 
 jobs:
   run-tests:
     runs-on: ubuntu-latest
 
     steps:
-      # Чекаутим репозиторий с функцией (репо А)
       - name: Checkout function repo (A)
         uses: actions/checkout@v4
 
-      # Чекаутим репозиторий с Dockerfile и тестами (репо B)
       - name: Checkout docker/tests repo (B)
         uses: actions/checkout@v4
         with:
           repository: Smaipl/Tests-Function-Api-Calling-OpenAi
           path: tests-repo
 
-      # Копируем requirements.txt из репо А в репо B
       - name: Copy requirements from repo A to repo B
         run: cp requirements.txt tests-repo/requirements.txt
 
-      # Собираем Docker-образ из репо B
       - name: Build Docker image
         run: |
           cd tests-repo
           docker build -t function-tests .
 
-      # Запускаем контейнер и сохраняем stdout в файл
       - name: Run tests in Docker
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ADDITIONAL_SECRETS: ${{ secrets.ADDITIONAL_SECRETS }}
         run: |
+          ADDITIONAL_ENV=""
+          if [ -n "$ADDITIONAL_SECRETS" ]; then
+            ADDITIONAL_ENV=$(echo "$ADDITIONAL_SECRETS" | jq -r 'to_entries|map("-e \(.key)=\(.value|@sh)")|join(" ")')
+          fi
+
           docker run --rm \
             -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+            $ADDITIONAL_ENV \
             -v "$GITHUB_WORKSPACE:/function_code" \
             function-tests \
             /app/.venv/bin/python test_runner.py \
@@ -52,7 +57,6 @@ jobs:
               --tests "/function_code/${{ inputs.function_name }}.yaml" \
           > results.log
 
-      # Пишем результат в summary
       - name: Write summary
         run: |
           echo "### Результаты тестов" >> $GITHUB_STEP_SUMMARY
@@ -61,7 +65,6 @@ jobs:
           cat results.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      # Сохраняем артефакт для скачивания
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
