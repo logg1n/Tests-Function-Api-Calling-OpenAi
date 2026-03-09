@@ -1,8 +1,9 @@
 import json
+from typing import Any
 
 
 class BaseJsonException(Exception):
-    def __init__(self, message: str = "", fields: any = None):
+    def __init__(self, message: str = "", fields: Any = None):
         self.message = message
         self.fields = fields or []
         super().__init__(self.message)
@@ -17,4 +18,8 @@ class EmptyRequiredFields(BaseJsonException):
 
 
 class TypeMismatchJsonToPython(BaseJsonException):
+    pass
+
+
+class UnregisterField(BaseJsonException):
     pass
