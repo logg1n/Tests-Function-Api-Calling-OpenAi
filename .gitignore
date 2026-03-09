@@ -121,11 +121,10 @@ celerybeat.pid
 # Временные файлы тестов
 test_results/
 # Docker volumes
-backend_data/
+
 redis_data/
 
-# Собранные файлы фронтенда (клиент соберет сам)
-telegram-admin-hub/dist/
+
 
 # Python
 __pycache__/
@@ -133,8 +132,9 @@ __pycache__/
 .venv/
 
 # Node
-telegram-admin-hub/node_modules/
+
 
 # Env
 .env
-backend/mock/
+
+mock
