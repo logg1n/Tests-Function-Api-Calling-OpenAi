@@ -54,7 +54,7 @@ class FunctionSchema(BaseModel):
         try:
             tree = ast.parse(self.source_code)
         except Exception as e:
-            raise ValueError(f"Ошибка парсинга кода: {e}")
+            raise ValueError(f"Ошибка парсинга кода: {e}")  # noqa: B904
 
         found_args = []
 
