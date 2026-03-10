@@ -1,55 +1,58 @@
 import argparse
 import inspect
 import json
+import sys
 from importlib import import_module
-from pprint import pprint
-from typing import Any
+from pathlib import Path
 
 import orjson
 
 from src.schema.json_schema import Schema
+from src.schema.py_schema import FunctionSchema
 
-python_to_json: dict[str | tuple, str] = {
-    "dict": "object",
-    ("list", "tuple"): "array",
-    "str": "string",
-    ("int", "float"): "number",
-    "True": "true",
-    "False": "false",
-    "None": "null",
-}
+sys.tracebacklimit = 0
 
 
-def parse_json(file):
+def parse_json(file) -> Schema:
     with open(file, encoding="utf-8") as f:
         raw_schema = orjson.loads(json.dumps(json.load(f)))
 
-    schema = Schema.model_validate(raw_schema)
-
-    pprint(schema)
+    return Schema.model_validate(raw_schema)
 
 
-def parse_func(file: str):
-    name_file: str = file.split(".")[0]
-    module = import_module(f"{name_file}")
+def parse_func(file: Path, schema: Schema) -> bool:
+    import_path = ".".join(file.with_suffix("").parts)
 
-    func: Any
-    try:
-        func = getattr(module, f"{name_file}")
-    except ValueError:
-        return "Неверное "
+    module = import_module(import_path)
+    func = getattr(module, file.stem)
+
     sig = inspect.signature(func)
 
-    print(sig)
+    source = inspect.getsource(func)
+
+    data = {
+        "arguments": sig.parameters,
+        "json_schema": schema,
+        "source_code": source,
+    }
+
+    FunctionSchema.model_validate(data)
+
+    return True
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--py", type=str)
-    parser.add_argument("--json", type=str)
+    parser.add_argument("--py", type=str, required=True)
+    parser.add_argument("--json", type=str, required=True)
     args: argparse.Namespace = parser.parse_args()
 
-    parse_json(args.json)
+    schema = parse_json(args.json)
+    path_func = Path(args.py)
+    res = parse_func(path_func, schema)
+
+    if not res:
+        raise Exception("Неизвестная ошибка")
 
 
 if __name__ == "__main__":
