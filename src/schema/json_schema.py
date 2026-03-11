@@ -49,17 +49,17 @@ class Property(BaseModel):
 
 
 class Parameters(BaseModel):
-    parameter_type: str = Field(alias="type")
+    parameter_type: str | None = Field(..., min_length=1, alias="type")
     properties: dict[str, Property]
-    required: list[str]
+    required: list[str] = Field(default_factory=list)
     _required_fields = PrivateAttr(default=DEFAULT_REQUIRED_FIELDS)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class Schema(BaseModel):
-    name: str
-    description: str
+    name: str | None = Field(..., min_length=1)
+    description: str | None = Field(..., min_length=1)
     parameters: Parameters
 
     model_config = ConfigDict(extra="allow")
