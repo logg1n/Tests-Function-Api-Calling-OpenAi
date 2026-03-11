@@ -52,7 +52,6 @@ dmypy.json
 # 3. NODE.JS / FRONTEND (Allure CLI)
 # -----------------------------------------------------------
 node_modules/
-package-lock.json
 npm-debug.log
 yarn-error.log
 
