@@ -41,12 +41,12 @@ jobs:
         run: npx allure generate --config allurerc.yaml
       
       - name: Build Awesome Allure Report
-        run: npx allure awesome allure-results/ --config allurerc.yaml
+        run: npx allure awesome allure-report/ --config allurerc.yaml
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: allure-results/ 
+          path: allure-report/ 
 
       - name: Deploy to GitHub Pages
         id: deployment
