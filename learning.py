@@ -41,11 +41,19 @@ def parse_func(file: Path, schema: Schema) -> bool:
     return True
 
 
+def on_traceback():
+    sys.tracebacklimit = 1000
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--trace", action="store_true")
     parser.add_argument("--py", type=str, required=True)
     parser.add_argument("--json", type=str, required=True)
     args: argparse.Namespace = parser.parse_args()
+
+    if args.trace:
+        on_traceback()
 
     schema = parse_json(args.json)
     path_func = Path(args.py)
