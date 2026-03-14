@@ -24,6 +24,8 @@ from src.schema.py_schema import FunctionSchema
 )
 def test_function_name_mismatch(file_name, schema_name, function, get_json_schema):
     allure.dynamic.title(f"Негативный тест имени: {schema_name}")
+    allure.dynamic.parameter("schema_name", schema_name)
+    allure.dynamic.parameter("file_name", file_name)
 
     json_data = get_json_schema(file_name, schema_name)
     schema_obj = Schema.model_validate(json_data)
@@ -31,13 +33,21 @@ def test_function_name_mismatch(file_name, schema_name, function, get_json_schem
     source = getattr(function, "__source__", "")
     sig = inspect.signature(function)
 
-    with allure.step("Запуск валидации FunctionSchema и ожидание FunctionNameMismatch"):
+    with allure.step("Запуск валидации и ожидание ошибки"):
         with pytest.raises(ExceptionGroup) as excinfo:
             FunctionSchema(
                 arguments=sig.parameters, json_schema=schema_obj, source_code=source
             )
 
-    with allure.step("Проверка наличия FunctionNameMismatch в группе"):
+        mismatches = excinfo.value.subgroup(FunctionNameMismatch)
+        if mismatches:
+            error_msg = str(mismatches.exceptions[0])
+            allure.attach(
+                error_msg,
+                name="Текст найденной ошибки",
+                attachment_type=allure.attachment_type.TEXT,
+            )
+
         assert excinfo.group_contains(FunctionNameMismatch)
 
 

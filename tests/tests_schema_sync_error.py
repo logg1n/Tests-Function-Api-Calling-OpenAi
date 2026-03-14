@@ -12,10 +12,8 @@ body_hidden_in_if = """
     if True:
         mode = arguments.get("mode", "fast") 
 """
-
 body_ok = "v1 = arguments.get('prompt', '')"
 body_sync_error = "v1 = arguments.get('unknown_key', 'default')"
-
 body_complex = """
     v1, v2, v3, v4 = (
         arguments.get("prompt", ""), 
@@ -26,45 +24,67 @@ body_complex = """
 """
 
 
+@allure.epic("Синхронизация Кода и Схемы")
+@allure.feature("Анализ тела функции (AST)")
 @allure.story("Отлов рассинхрона аргументов и дефолтов")
 @pytest.mark.parametrize(
-    "file_name, schema_name, function",
+    "file_name, schema_name, function, case_name",
     [
         (
             "SchemaSyncError.json",
             NAME,
             get_mock_function(NAME, body_hidden_in_if, "arguments"),
+            "Hidden in IF",
         ),
         (
             "SchemaSyncError.json",
             NAME,
             get_mock_function(NAME, body_sync_error, "arguments"),
+            "Unknown Key",
         ),
         (
             "SchemaSyncError.json",
             NAME,
             get_mock_function(NAME, body_complex, "arguments"),
+            "Complex Assignment",
         ),
     ],
 )
-def test_function_sync_errors(file_name, schema_name, function, get_json_schema):
-    allure.dynamic.title(f"Негативный тест: {schema_name}")
+def test_function_sync_errors(
+    file_name, schema_name, function, case_name, get_json_schema
+):
+    allure.dynamic.title(f"Ошибка синхронизации AST: {case_name}")
 
     json_data = get_json_schema(file_name, schema_name)
     schema_obj = Schema.model_validate(json_data)
-
     source = getattr(function, "__source__", "")
     sig = inspect.signature(function)
 
-    with allure.step("Запуск валидации и ожидание ExceptionGroup"):
+    allure.attach(
+        source,
+        name="Source Code under test",
+        attachment_type=allure.attachment_type.TEXT,
+    )
+
+    with allure.step("Валидация FunctionSchema и поиск SchemaSyncError"):
         with pytest.raises(ExceptionGroup) as excinfo:
             FunctionSchema(
                 arguments=sig.parameters, json_schema=schema_obj, source_code=source
             )
 
+        sync_errors = excinfo.value.subgroup(SchemaSyncError)
+        if sync_errors:
+            allure.attach(
+                str(sync_errors),
+                name="Детали рассинхрона (AST mismatch)",
+                attachment_type=allure.attachment_type.TEXT,
+            )
+
         assert excinfo.group_contains(SchemaSyncError)
 
 
+@allure.epic("Синхронизация Кода и Схемы")
+@allure.feature("Анализ тела функции (AST)")
 @allure.story("Успешная синхронизация кода и JSON-схемы")
 @pytest.mark.parametrize(
     "file_name, schema_name, function",
@@ -77,15 +97,18 @@ def test_function_sync_errors(file_name, schema_name, function, get_json_schema)
     ],
 )
 def test_function_sync_success(file_name, schema_name, function, get_json_schema):
-    allure.dynamic.title(f"Позитивный тест: {schema_name}")
+    allure.dynamic.title(f"Успешный AST-матчинг: {schema_name}")
 
     json_data = get_json_schema(file_name, schema_name)
     schema_obj = Schema.model_validate(json_data)
-
     source = getattr(function, "__source__", "")
     sig = inspect.signature(function)
 
-    with allure.step("Валидация FunctionSchema (ожидаем успех)"):
+    allure.attach(
+        source, name="Valid Source Code", attachment_type=allure.attachment_type.TEXT
+    )
+
+    with allure.step("Валидация FunctionSchema (ожидаем полное соответствие)"):
         FunctionSchema(
             arguments=sig.parameters, json_schema=schema_obj, source_code=source
         )

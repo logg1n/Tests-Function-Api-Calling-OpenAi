@@ -1,3 +1,5 @@
+import json
+
 import allure
 import pytest
 
@@ -7,7 +9,7 @@ from src.schema.json_schema import Schema
 
 @allure.epic("Валидация JSON схем")
 @allure.feature("Лишние поля (UnregisterField)")
-@allure.story("Одиночные лишние ключи на разных уровнях вложенности")
+@allure.story("Одиночные лишние ключи")
 @pytest.mark.parametrize(
     "file_name, schema_name",
     [
@@ -20,23 +22,37 @@ def test_single_extra_field_on_different_levels(
     file_name, schema_name, get_json_schema
 ):
     allure.dynamic.title(f"Одиночный лишний ключ: {schema_name}")
+    allure.dynamic.description(
+        "Проверка одного лишнего ключа на конкретном уровне вложенности."
+    )
 
     json_data = get_json_schema(file_name, schema_name)
+    allure.attach(
+        json.dumps(json_data, indent=2), "Тестируемый JSON", allure.attachment_type.JSON
+    )
 
-    with allure.step("Валидация и проверка ExceptionGroup"):
+    with allure.step("Валидация и поиск UnregisterField"):
         with pytest.raises(ExceptionGroup) as excinfo:
             Schema.model_validate(json_data)
 
         unregister_errors = [
             e for e in excinfo.value.exceptions if isinstance(e, UnregisterField)
         ]
+
+        found_field = unregister_errors[0].fields[0]
+        allure.attach(
+            f"Найдено лишнее поле: {found_field}",
+            name="Результат поиска",
+            attachment_type=allure.attachment_type.TEXT,
+        )
+
         assert len(unregister_errors) == 1
         assert len(unregister_errors[0].fields) == 1
 
 
 @allure.epic("Валидация JSON схем")
 @allure.feature("Лишние поля (UnregisterField)")
-@allure.story("Комбинации лишних ключей на разных уровнях")
+@allure.story("Комбинации лишних ключей")
 @pytest.mark.parametrize(
     "file_name, schema_name, expected_obj_count",
     [
@@ -49,23 +65,33 @@ def test_single_extra_field_on_different_levels(
 def test_combined_extra_fields_on_levels(
     file_name, schema_name, expected_obj_count, get_json_schema
 ):
-    allure.dynamic.title(f"Комбо уровней: {schema_name}")
+    allure.dynamic.title(f"Комбо-проверка ({expected_obj_count} уровня): {schema_name}")
 
     json_data = get_json_schema(file_name, schema_name)
 
-    with allure.step(f"Ожидание {expected_obj_count} объектов UnregisterField"):
+    with allure.step(f"Ожидание ошибок на {expected_obj_count} уровнях"):
         with pytest.raises(ExceptionGroup) as excinfo:
             Schema.model_validate(json_data)
 
         unregister_errors = [
             e for e in excinfo.value.exceptions if isinstance(e, UnregisterField)
         ]
+
+        all_fields = {
+            f"Level {i + 1}": e.fields for i, e in enumerate(unregister_errors)
+        }
+        allure.attach(
+            json.dumps(all_fields, indent=2),
+            name="Список всех лишних полей",
+            attachment_type=allure.attachment_type.JSON,
+        )
+
         assert len(unregister_errors) == expected_obj_count
 
 
 @allure.epic("Валидация JSON схем")
 @allure.feature("Лишние поля (UnregisterField)")
-@allure.story("Массовые лишние ключи (Triple Extra)")
+@allure.story("Массовые лишние ключи")
 @pytest.mark.parametrize(
     "file_name, schema_name, expected_total_keys",
     [
@@ -78,11 +104,11 @@ def test_combined_extra_fields_on_levels(
 def test_triple_extra_fields(
     file_name, schema_name, expected_total_keys, get_json_schema
 ):
-    allure.dynamic.title(f"Массовая проверка (9 ключей): {schema_name}")
+    allure.dynamic.title(f"Массовый тест: поиск {expected_total_keys} ключей")
 
     json_data = get_json_schema(file_name, schema_name)
 
-    with allure.step("Валидация и подсчет общего количества лишних полей"):
+    with allure.step("Валидация и агрегация всех лишних полей"):
         with pytest.raises(ExceptionGroup) as excinfo:
             Schema.model_validate(json_data)
 
@@ -91,8 +117,15 @@ def test_triple_extra_fields(
         ]
         total_found = sum(len(e.fields) for e in unregister_errors)
 
+        all_names = [field for e in unregister_errors for field in e.fields]
+        allure.attach(
+            ", ".join(all_names),
+            name="Найденные ключи",
+            attachment_type=allure.attachment_type.TEXT,
+        )
+
         assert total_found == expected_total_keys
-        allure.attach(str(total_found), name="Total keys found")
+        allure.dynamic.parameter("total_keys_found", total_found)
 
 
 @allure.epic("Валидация JSON схем")
@@ -110,12 +143,12 @@ def test_triple_extra_fields(
     ],
 )
 def test_all_fields(file_name, schema_name, result, get_json_schema):
-    allure.dynamic.title(f"Позитивный тест: {schema_name}")
+    allure.dynamic.title(f"Чистая схема: {schema_name}")
 
     json_data = get_json_schema(file_name, schema_name)
 
-    with allure.step("Валидация корректной схемы"):
+    with allure.step("Валидация (лишних полей быть не должно)"):
         schema = Schema.model_validate(json_data)
 
-    with allure.step("Проверка соответствия имени"):
+    with allure.step("Проверка целостности данных"):
         assert result == schema.name
