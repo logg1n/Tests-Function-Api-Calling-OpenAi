@@ -1,6 +1,6 @@
-import requests
+import httpx
 
-response = requests.get(
+response = httpx.get(
     "https://api.proxyapi.ru/openrouter/v1/models",
     headers={"Authorization": "Bearer <КЛЮЧ-PROXYAPI>"},
 )
