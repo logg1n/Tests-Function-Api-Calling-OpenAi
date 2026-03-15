@@ -28,8 +28,9 @@ jobs:
           pattern: report-*
           merge-multiple: false
           path: ./raw-artifacts
-          # УБРАНЫ строки repository и run-id!
-          # Теперь action сам возьмет их из контекста workflow_run
+          # Явно указываем репозиторий и ID запуска, который нас триггернул
+          repository: ${{ github.event.workflow_run.repository.full_name }}
+          run-id: ${{ github.event.workflow_run.id }}
         continue-on-error: true
 
       - name: Organize Reports
