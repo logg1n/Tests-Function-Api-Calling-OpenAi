@@ -51,17 +51,34 @@ def test_function_sync():
                 attachment_type=allure.attachment_type.JSON,
             )
 
-    # 3. Загрузка и анализ кода
-    with allure.step(f"Загрузка функции {func_name} из {py_file.name}"):
+        # 3. Загрузка и анализ кода
+    with allure.step(f"Поиск функции {func_name} в файле {py_file.name}"):
         spec = spec_from_file_location(func_name, py_file.absolute())
         if spec is None or spec.loader is None:
-            pytest.fail(f"Не удалось загрузить модуль из {py_file}")
+            pytest.fail(
+                f"❌ Критическая ошибка: Не удалось загрузить модуль из {py_file}"
+            )
 
         mod = module_from_spec(spec)
         spec.loader.exec_module(mod)
 
+        # Вытаскиваем список всех реальных функций из файла для отчета
+        actual_functions = [
+            n
+            for n, o in inspect.getmembers(mod, inspect.isfunction)
+            if o.__module__ == mod.__name__
+        ]
+
+        allure.attach(
+            f"Ожидали: {func_name}\nНашли в файле: {actual_functions}",
+            name="Список функций в модуле",
+            attachment_type=allure.attachment_type.TEXT,
+        )
+
         if not hasattr(mod, func_name):
-            pytest.fail(f"Функция '{func_name}' не найдена в файле {py_file.name}")
+            # Вместо сухого падения даем развернутый ответ
+            error_msg = f"❌ Функция '{func_name}' не найдена! Проверьте имя в коде. Найдено: {actual_functions}"
+            pytest.fail(error_msg)
 
         func = getattr(mod, func_name)
         source_code = inspect.getsource(func)
