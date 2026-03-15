@@ -2,10 +2,10 @@ name: 'AI Function & Schema Validator'
 
 inputs:
   func_path:
-    description: 'Полный путь к .py файлу (напр. src/get_weather.py)'
+    description: 'Полный путь к .py файлу '
     required: true
   schema_path:
-    description: 'Полный путь к .json файлу (напр. fixtures/get_weather.json)'
+    description: 'Полный путь к .json файлу'
     required: true
 
 runs:
