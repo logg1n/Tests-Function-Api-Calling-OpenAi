@@ -43,23 +43,36 @@ runs:
     - name: Generate Allure Report
       shell: bash
       run: |
-        # Используем тот же абсолютный путь
-        ALLURE_RESULTS_DIR="${{ github.workspace }}/allure-results"
+        # 1. Определяем пути АБСОЛЮТНО (в workspace пользователя)
+        RESULTS_DIR="${{ github.workspace }}/allure-results"
+        REPORT_DIR="${{ github.workspace }}/allure-report"
         
-        echo "🔍 Checking results directory: $ALLURE_RESULTS_DIR"
-        if [ -d "$ALLURE_RESULTS_DIR" ]; then
-          ls -la "$ALLURE_RESULTS_DIR"
-        else
-          echo "❌ Directory not found!"
+        echo "📂 Результаты тестов: $RESULTS_DIR"
+        echo "📦 Папка для отчета: $REPORT_DIR"
+
+        # 2. Проверка (на всякий случай)
+        if [ ! -d "$RESULTS_DIR" ] || [ -z "$(ls -A $RESULTS_DIR)" ]; then
+          echo "❌ Ошибка: Нет результатов тестов для генерации отчета!"
           exit 1
         fi
 
-        # Установка зависимостей Node (если нужно)
+        # 3. Установка Node зависимостей (если нет)
         if [ ! -d "${{ github.action_path }}/node_modules" ]; then
           cd ${{ github.action_path }} && npm install
         fi
 
-        echo "📊 Generating Allure Report..."
-        # Передаем абсолютный путь в команду генерации
-        npx allure awesome "$ALLURE_RESULTS_DIR" \
-          --config ${{ github.action_path }}/allurerc.yaml
+        # 4. ГЕНЕРАЦИЯ ОТЧЕТА С ЯВНЫМ ВЫХОДОМ В НУЖНУЮ ПАПКУ
+        # Флаг --output гарантирует, что папка создастся именно в $REPORT_DIR
+        echo "🚀 Генерация HTML отчета..."
+        npx allure awesome "$RESULTS_DIR" \
+          --config ${{ github.action_path }}/allurerc.yaml \
+          --output "$REPORT_DIR"
+          
+        # 5. Проверка успеха
+        if [ -d "$REPORT_DIR" ] && [ "$(ls -A $REPORT_DIR)" ]; then
+          echo "✅ Отчет успешно создан в $REPORT_DIR"
+          ls -la "$REPORT_DIR"
+        else
+          echo "❌ Ошибка: Отчет не был создан по пути $REPORT_DIR"
+          exit 1
+        fi
