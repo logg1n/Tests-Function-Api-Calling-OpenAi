@@ -9,7 +9,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  actions: read  # Критично для чтения артефактов из других репо
+  actions: write
 
 jobs:
   collect-and-deploy:
