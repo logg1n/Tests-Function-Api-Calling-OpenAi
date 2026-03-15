@@ -44,17 +44,11 @@ runs:
           --schema_path "${{ github.workspace }}/${{ inputs.schema_path }}"
       continue-on-error: true # Позволяет сгенерировать отчет даже если тест упал
 
-    - name: Generate Awesome Report
-      shell: bash
-      run: |
-        # Создаем директорию для отчета, если нет
-        mkdir -p ${{ github.workspace }}/allure-report-functions
-        
-        # Генерируем HTML отчет из результатов
-        # Путь к результатам жестко задан в runner.py как ./allure-results-functions относительно места запуска или cwd
-        # Убедимся, что мы в workspace или передадим абсолютный путь, если allure-awesome требует
-        cd ${{ github.workspace }}
-        
-        npx allure-awesome generate ./allure-results-functions \
-          --config ${{ github.action_path }}/allurerc.yaml \
-          --output ./allure-report-functions
+    - name: Generate Allure Report
+      uses: simple-elf/allure-report-action@master
+      if: always()
+      with:
+        allure_results: allure-results-functions
+        allure_report: allure-report-functions
+        allure_history: allure-history-functions
+        keep_reports: 20 

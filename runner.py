@@ -12,22 +12,18 @@ from allure_commons.logger import AllureFileLogger
 from allure_commons.model2 import Label, Status, StatusDetails, TestResult
 from allure_commons.types import AttachmentType, LabelType
 
-# Убедись, что эти модули доступны в твоем проекте (src/schema/...)
 from src.schema.json_schema import Schema
 from src.schema.py_schema import FunctionSchema
 
 
 def main():
     parser = argparse.ArgumentParser(description="Validator for AI Functions")
-
-    # ИМЕНА АРГУМЕНТОВ ИЗМЕНЕНЫ НА func_path и schema_path (как в action.yml)
     parser.add_argument(
         "--func_path", required=True, help="Path to the Python function file"
     )
     parser.add_argument(
         "--schema_path", required=True, help="Path to the JSON schema file"
     )
-
     args = parser.parse_args()
 
     py_file = Path(args.func_path)
@@ -43,13 +39,13 @@ def main():
 
     func_name = py_file.stem
 
-    # Путь для результатов Allure (относительно текущей директории запуска)
-    # Лучше использовать абсолютный путь или убедиться, что cwd правильный
+    # Путь для результатов Allure
     default_path = Path("./allure-results-functions")
     default_path.mkdir(exist_ok=True, parents=True)
 
-    lifecycle = AllureLifecycle()
-    lifecycle.add_reporter(AllureFileLogger(str(default_path)))
+    # ✅ ПРАВИЛЬНОЕ создание lifecycle с logger
+    logger = AllureFileLogger(str(default_path))
+    lifecycle = AllureLifecycle(logger)
 
     test_uuid = str(uuid.uuid4())
     result = TestResult(
@@ -74,7 +70,6 @@ def main():
         # 1. Чтение и валидация схемы
         with open(json_file, encoding="utf-8") as f:
             schema_data = json.load(f)
-            # Поддержка двух форматов: { "func_name": {...} } или просто {...}
             if isinstance(schema_data, dict) and func_name in schema_data:
                 schema_dict = schema_data[func_name]
             else:
@@ -98,7 +93,7 @@ def main():
         func = getattr(mod, func_name)
         source_code = inspect.getsource(func)
 
-        # 3. Основная проверка (твоя логика в FunctionSchema)
+        # 3. Основная проверка
         FunctionSchema.model_validate(
             {
                 "arguments": inspect.signature(func).parameters,
@@ -116,26 +111,30 @@ def main():
         result.statusDetails = StatusDetails(message=f"[{error_type}] {str(e)}")
         result.labels.append(Label(name=LabelType.STORY, value=f"Ошибка: {error_type}"))
 
-        # Прикрепляем данные к отчету только если они были успешно прочитаны до ошибки
+        # Прикрепляем данные к отчету
         if schema_dict:
             lifecycle.attach_data(
-                test_uuid,
-                json.dumps(schema_dict, indent=2, ensure_ascii=False),
-                "JSON Schema",
-                AttachmentType.JSON,
+                uuid=test_uuid,
+                body=json.dumps(schema_dict, indent=2, ensure_ascii=False),
+                name="JSON Schema",
+                attachment_type=AttachmentType.JSON,
             )
         if source_code:
             lifecycle.attach_data(
-                test_uuid, source_code, "Python Source Code", AttachmentType.TEXT
+                uuid=test_uuid,
+                body=source_code,
+                name="Python Source Code",
+                attachment_type=AttachmentType.TEXT,
             )
 
         print(f"::error file={py_file}::[{error_type}] {e}")
-        # Не делаем sys.exit(1) здесь, так как нам нужно записать результат теста в Allure
-        # Выход будет выполнен в блоке finally если статус FAILED
 
     finally:
         result.stop = int(time.time() * 1000)
-        lifecycle.write_test_result(result)
+
+        # ✅ ПРАВИЛЬНОЕ сохранение результата
+        lifecycle.schedule_test_result(result)
+        lifecycle.flush()
 
         if result.status == Status.FAILED:
             sys.exit(1)
