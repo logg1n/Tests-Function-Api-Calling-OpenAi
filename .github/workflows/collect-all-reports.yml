@@ -28,6 +28,8 @@ jobs:
           pattern: report-*
           merge-multiple: false
           path: ./raw-artifacts
+          # УБРАНЫ строки repository и run-id!
+          # Теперь action сам возьмет их из контекста workflow_run
         continue-on-error: true
 
       - name: Organize Reports
