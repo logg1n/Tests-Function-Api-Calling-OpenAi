@@ -1,79 +1,42 @@
-name: Collect & Deploy All Reports
+name: 'AI Function & Schema Validator'
+description: 'Валидация функции и генерация Allure отчета'
 
-on:
-  # Запускается, когда ЛЮБОЙ репо завершает workflow "Check My Functions"
-  workflow_run:
-    workflows: ["Check My Functions"]
-    types:
-      - completed
+inputs:
+  func_path:
+    description: 'Путь к .py файлу'
+    required: true
+  schema_path:
+    description: 'Путь к .json файлу'
+    required: true
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-  actions: read # Право читать артефакты из других репо
+runs:
+  using: 'composite'
+  steps:
+    # 1. Установка зависимостей (pytest, allure-pytest, pydantic)
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        pip install pytest allure-pytest pydantic
 
-jobs:
-  collect-and-deploy:
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    # 2. Запуск твоей валидации
+    - name: Run Validation
+      shell: bash
+      env:
+        FUNC_PATH: ${{ github.workspace }}/${{ inputs.func_path }}
+        SCHEMA_PATH: ${{ github.workspace }}/${{ inputs.schema_path }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        export PYTHONPATH="$PYTHONPATH:$ACTION_PATH"
+        # Запускаем runner.py. Он должен читать переменные окружения FUNC_PATH и SCHEMA_PATH
+        # И писать результаты в папку allure-results-functions
+        python "$ACTION_PATH/runner.py"
+      continue-on-error: true
 
-      # 🔥 МАГИЯ: Скачиваем ВСЕ артефакты с префиксом "report-"
-      # Они скачаются в разные папки, так как имена уникальны
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: report-*
-          merge-multiple: false # Важно: не сливать файлы, а сохранить структуру папок
-          path: ./raw-artifacts
-
-      - name: Organize Reports
-        run: |
-          mkdir -p ./final-site
-          
-          # Проходим по всем скачанным папкам
-          cd ./raw-artifacts
-          for folder in report-*; do
-            # Извлекаем имя репо из имени папки (убираем префикс report- и суффикс -run_id)
-            # Пример имени: report-logg1n__my-repo-98765
-            # Нам нужно сделать папку: logg1n__my-repo
-            
-            # Простой вариант: используем имя папки как есть (оно уникально)
-            dest_name=$folder
-            mkdir -p ../final-site/$dest_name
-            cp -r $folder/* ../final-site/$dest_name/
-          done
-
-          # Генерируем главную страницу (index.html) со списком всех отчетов
-          cd ../final-site
-          echo "<html><head><title>Все отчеты команды</title><style>body{font-family:sans-serif;} ul{list-style:none;} li{margin:10px;}</style></head><body>" > index.html
-          echo "<h1>📊 Отчеты валидации функций</h1>" >> index.html
-          echo "<ul>" >> index.html
-          
-          for dir in */; do
-            if [ "$dir" != "./" ]; then
-              # Красивое имя для ссылки
-              link_name=${dir%/}
-              echo "<li>👉 <a href='$link_name/index.html'><b>$link_name</b></a> <small>(нажми для отчета)</small></li>" >> index.html
-            fi
-          done
-          
-          echo "</ul><br><p>Обновлено: $(date)</p></body></html>" >> index.html
-
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './final-site'
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-      
-      - name: Show Result
-        run: echo "✅ Общий сайт обновлен! Ссылка: ${{ steps.deployment.outputs.page_url }}"
+    # 3. Генерация отчета готовым действием (БЕЗ wget и tar!)
+    - name: Generate Allure Report
+      if: always()
+      uses: simple-elf/allure-report-action@master
+      with:
+        allure_results: allure-results-functions
+        allure_report: allure-report-functions
+        gh_pages: false
