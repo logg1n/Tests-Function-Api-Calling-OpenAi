@@ -1,15 +1,26 @@
 name: Collect & Deploy All Reports
 
 on:
+  # 1. Автоматический запуск после завершения тестов в ЛЮБОМ репо
   workflow_run:
-    workflows: ["Check My Functions"]
-    types: [completed]
-  workflow_dispatch: 
+    workflows: 
+      - "Check My Functions"  # Имя воркфлоу в репо разработчиков
+    types:
+      - completed
+  
+  # 2. Ручной запуск (для тестов или принудительного сбора)
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Имя репозитория (владелец/имя), откуда забрать отчет'
+        required: true
+        default: 'logg1n/mock-rep-for-Tests-Function-Api-Calling-OpenAi'
+
 permissions:
   contents: read
   pages: write
   id-token: write
-  actions: write
+  actions: read 
 
 jobs:
   collect-and-deploy:
@@ -22,16 +33,38 @@ jobs:
       - name: Checkout Central Repo
         uses: actions/checkout@v4
 
+      # === НОВЫЙ ШАГ: Определяем репозиторий динамически ===
+      - name: Determine Source Repository
+        id: get_source
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # АВТОМАТИЧЕСКИЙ РЕЖИМ: Берем репо из триггера
+            REPO="${{ github.event.workflow_run.repository.full_name }}"
+            echo "🤖 Auto mode: Fetching from $REPO"
+          else
+            # РУЧНОЙ РЕЖИМ: Берем из инпута
+            REPO="${{ inputs.target_repo }}"
+            echo "👤 Manual mode: Fetching from $REPO"
+          fi
+          
+          # Проверка на пустоту
+          if [ -z "$REPO" ]; then
+            echo "❌ Error: Repository name is empty!"
+            exit 1
+          fi
+          
+          # Сохраняем в переменную окружения для следующих шагов
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+
+      # === ШАГ СКАЧИВАНИЯ С ДИНАМИЧЕСКИМ ИМЕНЕМ ===
       - name: Download Latest Report Artifact
         uses: actions/download-artifact@v4
         with:
           pattern: report-*
           merge-multiple: false
           path: ./raw-artifacts
-          # Жестко указываем репозиторий, где лежат тесты (источник)
-          repository: logg1n/mock-rep-for-Tests-Function-Api-Calling-OpenAi
-          # ВАЖНО: Убираем run-id, чтобы скачать ПОСЛЕДНИЙ успешный артефакт
-          # github-token нужен для доступа к чужому репо
+          # !!! ВОТ ОНО: Динамическая переменная вместо жесткого текста !!!
+          repository: ${{ steps.get_source.outputs.repo }}
           github-token: ${{ secrets.CROSS_REPO_TOKEN }}
         continue-on-error: true
 
