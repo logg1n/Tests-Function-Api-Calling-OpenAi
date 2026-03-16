@@ -59,45 +59,50 @@ jobs:
         id: debug_check
         run: |
           REPO="${{ steps.get_source.outputs.repo }}"
-          TOKEN="${{ secrets.CROSS_REPO_TOKEN }}"
+          # 1. Экспортируем токен в специальную переменную окружения GH_TOKEN
+          export GH_TOKEN="${{ secrets.CROSS_REPO_TOKEN }}"
           
           echo "🔍 Проверка доступа к репозиторию: $REPO"
+          echo "Токен установлен в переменную окружения GH_TOKEN"
           
-          # 1. Проверяем доступ к репо
-          if ! gh repo view "$REPO" --token "$TOKEN" > /dev/null 2>&1; then
+          # 2. Проверяем доступ (теперь gh сам подхватит токен из среды)
+          if ! gh repo view "$REPO" > /dev/null 2>&1; then
             echo "❌ ОШИБКА: Нет доступа к репозиторию $REPO."
-            echo "Проверь токен CROSS_REPO_TOKEN (нужны права 'repo')."
+            echo "Проверь:"
+            echo "1. Права токена (должна стоять галочка 'repo')."
+            echo "2. SSO авторизацию (если репо в организации)."
+            echo "3. Правильность имени репозитория."
             exit 1
           fi
           echo "✅ Доступ к репозиторию есть."
 
-          # 2. Ищем последний запуск воркфлоу "Check My Functions"
-          echo "🔎 Поиск последних запусков воркфлоу..."
-          RUN_ID=$(gh run list --repo "$REPO" --workflow "Check My Functions" --limit 1 --json databaseId --jq '.[0].databaseId' --token "$TOKEN")
+          # 3. Ищем последний запуск воркфлоу
+          echo "🔎 Поиск последних запусков воркфлоу 'Check My Functions'..."
+          # Тоже без флага --token, берет из GH_TOKEN
+          RUN_ID=$(gh run list --repo "$REPO" --workflow "Check My Functions" --limit 1 --json databaseId --jq '.[0].databaseId')
           
           if [ -z "$RUN_ID" ]; then
             echo "⚠️ Не найдено запусков воркфлоу 'Check My Functions' в репо $REPO."
-            echo "Проверьте точное имя воркфлоу в исходном репозитории."
+            echo "Проверьте точное имя воркфлоу (name: ...) в исходном репозитории."
             exit 1
           else
             echo "✅ Найден последний запуск ID: $RUN_ID"
             
-            # Показываем какие артефакты там есть
             echo "📦 Артефакты в запуске #$RUN_ID:"
-            gh run view "$RUN_ID" --repo "$REPO" --token "$TOKEN" --json artifacts --jq '.artifacts[] | .name' || echo "(список пуст)"
+            gh run view "$RUN_ID" --repo "$REPO" --json artifacts --jq '.artifacts[] | .name' || echo "(список пуст)"
           fi
 
-          # 3. Скачивание
+          # 4. Скачивание
           echo "📥 Скачивание артефактов с паттерном 'report-*'..."
           mkdir -p ./raw-artifacts
           
           gh run download "$RUN_ID" \
             --repo "$REPO" \
             --pattern 'report-*' \
-            --dir './raw-artifacts' \
-            --token "$TOKEN"
+            --dir './raw-artifacts'
+            # Флаг --token тоже не нужен, если есть GH_TOKEN
 
-          # 4. Проверка результата
+          # 5. Проверка результата
           if [ -d "./raw-artifacts" ] && [ "$(ls -A ./raw-artifacts)" ]; then
             echo "✅ УСПЕХ! Артефакты скачаны:"
             ls -la ./raw-artifacts
