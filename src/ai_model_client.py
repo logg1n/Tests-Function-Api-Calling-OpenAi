@@ -66,12 +66,6 @@ class ModelInterface:
         message = choice.message
         finish_reason = choice.finish_reason
 
-        # ... (код после получения response)
-
-        message = response.choices[0].message
-        finish_reason = response.choices[0].finish_reason
-
-        # 1. Проверка на вызов функций (даже если статус stop)
         if message.tool_calls:
             called_tool = message.tool_calls[0].function.name
             if called_tool == json_schema.name:
@@ -82,7 +76,6 @@ class ModelInterface:
                 fields={"expected": json_schema.name, "received": called_tool},
             )
 
-        # 2. Ошибки лимитов и цензуры
         if finish_reason == "length":
             raise LLMGenerationError(
                 message="Генерация прервана: не хватило токенов",
@@ -95,14 +88,12 @@ class ModelInterface:
                 fields={"finish_reason": "content_filter"},
             )
 
-        # 3. Модель просто поболтала текстом
         if message.content:
             raise LLMMismatchError(
                 message="Модель ответила текстом вместо вызова функции",
                 fields={"content_preview": message.content[:100]},
             )
 
-        # 4. Если вообще ничего не пришло
         raise LLMGenerationError(
             message="Пустой ответ от модели (ни текста, ни функций)"
         )
