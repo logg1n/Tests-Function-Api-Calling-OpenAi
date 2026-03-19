@@ -8,7 +8,7 @@ from openai.types.chat import (
 )
 from openai.types.shared_params.function_definition import FunctionDefinition
 
-from src.exceptions.custom_exceptions import LLMGenerationError
+from src.exceptions.custom_exceptions import LLMGenerationError, LLMMismatchError
 from src.schema.client_schema import ClientModel, ModelConfig, RouterConfig
 from src.schema.json_schema import Schema
 
@@ -67,20 +67,32 @@ class ModelInterface:
         finish_reason = choice.finish_reason
 
         if message.tool_calls:
-            if any(tc.function.name == json_schema.name for tc in message.tool_calls):
+            called_tool = message.tool_calls[0].function.name
+            if called_tool == json_schema.name:
                 return message
-            raise Exception(
-                f"Вызвана неверная функция: {message.tool_calls[0].function.name}"
+
+            raise LLMMismatchError(
+                message="Вызвана неверная функция",
+                fields={"expected": json_schema.name, "received": called_tool},
             )
 
         if finish_reason == "length":
-            raise Exception("Ошибка: не хватило токенов (max_tokens).")
+            raise LLMGenerationError(
+                message="Генерация прервана: не хватило токенов",
+                fields={"max_tokens": model_conf.max_tokens, "finish_reason": "length"},
+            )
 
         if finish_reason == "content_filter":
-            raise Exception("Ошибка: ответ заблокирован фильтрами.")
+            raise LLMGenerationError(
+                message="Ответ заблокирован фильтрами безопасности",
+                fields={"finish_reason": "content_filter"},
+            )
 
         if message.content:
-            raise Exception(f"Текст вместо функции: {message.content[:50]}...")
+            raise LLMMismatchError(
+                message="Модель ответила текстом вместо вызова функции",
+                fields={"content_preview": message.content[:100]},
+            )
 
         raise LLMGenerationError(
             message="Пустой ответ от модели (ни текста, ни функций)"
