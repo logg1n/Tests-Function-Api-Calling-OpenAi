@@ -1,103 +1,56 @@
 from typing import Any
 
-from openai import OpenAI
+from openai import AsyncOpenAI
+from openai.types.chat import (
+    ChatCompletionFunctionToolParam,
+    ChatCompletionUserMessageParam,
+)
+from openai.types.shared_params.function_definition import FunctionDefinition
 
-from src.schema.client_schema import BaseClient, PropertiesModelaAi
+from src.schema.client_schema import ClientModel, ModelConfig, RouterConfig
 from src.schema.json_schema import Schema
 
 
 class ModelInterface:
-    def __init__(self):
-        self._config: BaseClient | None = None
-        self._client: OpenAI | None = None
+    @staticmethod
+    async def call_with_functions(
+        ai_client: AsyncOpenAI,
+        client_conf: ClientModel,
+        router_conf: RouterConfig,
+        model_conf: ModelConfig,
+        query: str,
+        json_schema: Schema,
+    ):
 
-    @property
-    def config(self) -> BaseClient:
-        if self._config is None:
-            raise ValueError("Конфигурация не установлена. Сначала задайте .config")
-        return self._config
+        func = FunctionDefinition(
+            name=json_schema.name,
+            description=json_schema.description,
+            parameters=json_schema.parameters.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
-    @config.setter
-    def config(self, conf: BaseClient):
-        if conf is None:
-            raise ValueError("Нельзя установить пустой конфиг")
-        self._config = conf
-        self._client = None
+        tools: list[ChatCompletionFunctionToolParam] = [
+            ChatCompletionFunctionToolParam(type="function", function=func)
+        ]
 
-    @property
-    def client(self) -> OpenAI:
-        if self._client is None:
-            self._client = OpenAI(
-                api_key=self.config.api_key.get_secret_value(),
-                base_url=self.config.base_url.encoded_string(),
-            )
-        return self._client
+        model_params: dict[str, Any] = model_conf.get_params()
 
-    def call_with_functions(
-        self, user_query: str, json_schema: Schema, properties: PropertiesModelaAi
-    ) -> dict[str, Any]:
-        return {}
+        response = await ai_client.chat.completions.create(
+            model=model_conf.model_id,
+            messages=[
+                router_conf.system_message,
+                ChatCompletionUserMessageParam(role="user", content=query),
+            ],
+            tools=tools,
+            tool_choice=router_conf.tool_choice,
+            timeout=router_conf.timeout,
+            **model_params,
+        )
 
+        if response.usage:
+            client_conf._request_token += response.usage.prompt_tokens
+            client_conf._response_token += response.usage.completion_tokens
+            client_conf._total_token += response.usage.total_tokens
 
-# def call_with_functions(
-#     self,
-#     user_query: str,
-#     function_schemas: list[dict[str, Any]],
-#     temperature: float = 0.1,
-#     max_tokens: int = 500,
-# ) -> dict[str, Any]:
-#     # 🔥 заменяем маркеры в запросе
-
-#     tools: list[ChatCompletionToolParam] = [
-#         ChatCompletionToolParam(type="function", function=f) for f in function_schemas
-#     ]
-
-#     response = self.client.chat.completions.create(
-#         model=self.model,
-#         messages=[
-#             {"role": "system", "content": self.role},
-#             {"role": "user", "content": user_query},
-#         ],
-#         tools=tools,
-#         tool_choice="auto",
-#         temperature=temperature,
-#         max_tokens=max_tokens,
-#     )
-
-#     message = response.choices[0].message
-#     result: dict[str, Any] = {
-#         "user_query": user_query,
-#         "model": self.model,
-#         "timestamp": response.created,
-#         "message": {
-#             "content": message.content,
-#             "tool_calls": None,
-#             "function_call": None,
-#         },
-#     }
-
-#     tool_calls = message.tool_calls or []
-#     parsed_calls = []
-#     for tool_call in tool_calls:
-#         if tool_call.type == "function":
-#             try:
-#                 args = json.loads(tool_call.function.arguments)
-#             except json.JSONDecodeError:
-#                 args = tool_call.function.arguments
-
-#             parsed_calls.append(
-#                 {
-#                     "id": tool_call.id,
-#                     "type": tool_call.type,
-#                     "function": {
-#                         "name": tool_call.function.name,
-#                         "arguments": args,
-#                     },
-#                 }
-#             )
-
-#     if parsed_calls:
-#         result["message"]["tool_calls"] = parsed_calls
-#         result["message"]["function_call"] = parsed_calls[0]["function"]
-
-#     return result
+        return response.choices[0].message
