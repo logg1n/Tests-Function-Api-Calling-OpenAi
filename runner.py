@@ -57,7 +57,7 @@ def test_local_function_sync():
             )
             schema = Schema.model_validate(schema_dict)
             allure.attach(
-                json.dumps(schema_dict, indent=2),
+                json.dumps(schema_dict, indent=2, ensure_ascii=False),
                 "Schema JSON",
                 allure.attachment_type.JSON,
             )
@@ -92,15 +92,26 @@ async def test_ai_inference():
     conf_path = os.environ.get("INPUT_CONFIG_PATH")
     schema_path = os.environ.get("INPUT_SCHEMA_PATH")
 
+    if not conf_path or not schema_path:
+        pytest.fail("Проверьте переменные INPUT_CONFIG_PATH и INPUT_SCHEMA_PATH")
+
     with open(schema_path, encoding="utf-8") as f:
         s_data = json.load(f)
         s_dict = list(s_data.values())[0] if isinstance(s_data, dict) else s_data
         schema = Schema.model_validate(s_dict)
 
     raw_conf = load_yaml_conf(conf_path)
-    root_config = ClientModel.model_validate(raw_conf)
 
-    router = root_config.aggregator
+    with allure.step("Валидация конфигурации клиента"):
+        from unittest.mock import patch
+
+        with patch("src.schema.client_schema.api_keys_storage") as mock_storage:
+            mock_storage.get_key_for.return_value = raw_conf.get("router", {}).get(
+                "api_key", "sk-test-mock"
+            )
+            root_config = ClientModel.model_validate(raw_conf)
+
+    router = root_config.router
     model_settings = router.model_settings
     sem = asyncio.Semaphore(model_settings.semaphore)
 
@@ -125,33 +136,71 @@ async def test_ai_inference():
 
     with allure.step("Анализ результатов и расхода токенов"):
         allure.attach(
-            root_config.usage_report, "Usage Stats", allure.attachment_type.TEXT
+            root_config.usage_report,
+            "Usage Stats (cumulative)",
+            allure.attachment_type.TEXT,
         )
-
-        allure.dynamic.parameter("Total Tokens", root_config._total_token)
-        allure.dynamic.parameter("Prompt Tokens", root_config._request_token)
+        allure.dynamic.parameter("Total Tokens (cumulative)", root_config._total_token)
+        allure.dynamic.parameter(
+            "Prompt Tokens (cumulative)", root_config._request_token
+        )
 
         errors = []
         for i, res in enumerate(results):
-            name = f"Query {i + 1}: {root_config.queries[i][:30]}..."
+            query_preview = (
+                root_config.queries[i][:30] + "..."
+                if len(root_config.queries[i]) > 30
+                else root_config.queries[i]
+            )
+            name = f"Query {i + 1}: {query_preview}"
+
             if isinstance(res, Exception):
                 errors.append(res)
                 allure.attach(
-                    str(res),
+                    f"{type(res).__name__}: {str(res)}",
                     name=f"❌ {name}",
                     attachment_type=allure.attachment_type.TEXT,
                 )
-            else:
-                content = (
-                    res.model_dump_json(indent=2)
-                    if hasattr(res, "model_dump_json")
-                    else str(res)
-                )
+                continue
+
+            try:
+                message = res.get("message") if isinstance(res, dict) else res
+                usage = res.get("usage", {}) if isinstance(res, dict) else {}
+
+                if usage:
+                    allure.attach(
+                        json.dumps(usage, indent=2, ensure_ascii=False),
+                        name=f"📊 Usage - {name}",
+                        attachment_type=allure.attachment_type.JSON,
+                    )
+                    allure.dynamic.parameter(
+                        f"Tokens - {name}", usage.get("total_tokens", 0)
+                    )
+
+                if message:
+                    if hasattr(message, "model_dump_json"):
+                        content = message.model_dump_json(indent=2)
+                    elif hasattr(message, "dict"):
+                        content = json.dumps(message.dict(), indent=2)
+                    else:
+                        content = str(message)
+
+                    allure.attach(
+                        content,
+                        name=f"✅ Response - {name}",
+                        attachment_type=allure.attachment_type.JSON,
+                    )
+
+            except Exception as e:
+                errors.append(e)
                 allure.attach(
-                    content,
-                    name=f"✅ {name}",
-                    attachment_type=allure.attachment_type.JSON,
+                    f"Error parsing result: {type(e).__name__}: {str(e)}",
+                    name=f"⚠️ Parse Error - {name}",
+                    attachment_type=allure.attachment_type.TEXT,
                 )
 
         if errors:
-            pytest.fail(f"Тест провален: {len(errors)} запросов завершились ошибкой")
+            error_summary = "\n".join(f"- {type(e).__name__}: {str(e)}" for e in errors)
+            pytest.fail(
+                f"Тест провален: {len(errors)} запросов завершились ошибкой:\n{error_summary}"
+            )
