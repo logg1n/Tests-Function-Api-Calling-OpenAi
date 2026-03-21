@@ -12,8 +12,8 @@ from src.exceptions.custom_exceptions import (
     InvalidFunctionSignature,
     SchemaSyncError,
 )
+from src.schema.interfaces import TYPE_MAPPING
 from src.schema.json_schema import Schema
-from src.utils.interfaces import TYPE_MAPPING
 
 
 def normalize_value(val: Any, target_type_str: str) -> Any:
