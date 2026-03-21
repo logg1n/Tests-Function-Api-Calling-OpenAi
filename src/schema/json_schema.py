@@ -9,7 +9,7 @@ from src.exceptions.custom_exceptions import (
     TypeMismatchJsonToPython,
     UnregisterField,
 )
-from src.utils.interfaces import DEFAULT_REQUIRED_FIELDS_PROPERTIES, TYPE_MAPPING
+from src.schema.interfaces import DEFAULT_REQUIRED_FIELDS_PROPERTIES, TYPE_MAPPING
 
 
 def get_mismatch_required_in_ptop_keys(
