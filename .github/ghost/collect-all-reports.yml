@@ -1,15 +1,26 @@
 name: Collect & Deploy All Reports
 
 on:
+  # 1. Автоматический запуск после завершения тестов в ЛЮБОМ репо
   workflow_run:
-    workflows: ["Check My Functions"]
-    types: [completed]
-  workflow_dispatch: 
+    workflows: 
+      - "Check My Functions"  # Имя воркфлоу в репо разработчиков (должно совпадать!)
+    types:
+      - completed
+  
+  # 2. Ручной запуск (для тестов или принудительного сбора)
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Имя репозитория (владелец/имя), откуда забрать отчет'
+        required: true
+        default: 'logg1n/mock-rep-for-Tests-Function-Api-Calling-OpenAi'
+
 permissions:
   contents: read
   pages: write
   id-token: write
-  actions: read  # Критично для чтения артефактов из других репо
+  actions: read 
 
 jobs:
   collect-and-deploy:
@@ -22,32 +33,100 @@ jobs:
       - name: Checkout Central Repo
         uses: actions/checkout@v4
 
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: report-*
-          merge-multiple: false
-          path: ./raw-artifacts
-          # УБРАНЫ строки repository и run-id!
-          # Теперь action сам возьмет их из контекста workflow_run
-        continue-on-error: true
+      # === ШАГ 1: Определяем репозиторий динамически ===
+      - name: Determine Source Repository
+        id: get_source
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # АВТОМАТИЧЕСКИЙ РЕЖИМ: Берем репо из триггера
+            REPO="${{ github.event.workflow_run.repository.full_name }}"
+            echo "🤖 Auto mode: Fetching from $REPO"
+          else
+            # РУЧНОЙ РЕЖИМ: Берем из инпута
+            REPO="${{ inputs.target_repo }}"
+            echo "👤 Manual mode: Fetching from $REPO"
+          fi
+          
+          if [ -z "$REPO" ]; then
+            echo "❌ Error: Repository name is empty!"
+            exit 1
+          fi
+          
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
 
+      # === ШАГ 2: Диагностика и скачивание через GitHub CLI ===
+      - name: DEBUG & Download Artifacts
+        id: debug_check
+        run: |
+          REPO="${{ steps.get_source.outputs.repo }}"
+          # 1. Экспортируем токен в специальную переменную окружения GH_TOKEN
+          export GH_TOKEN="${{ secrets.CROSS_REPO_TOKEN }}"
+          
+          echo "🔍 Проверка доступа к репозиторию: $REPO"
+          echo "Токен установлен в переменную окружения GH_TOKEN"
+          
+          # 2. Проверяем доступ (теперь gh сам подхватит токен из среды)
+          if ! gh repo view "$REPO" > /dev/null 2>&1; then
+            echo "❌ ОШИБКА: Нет доступа к репозиторию $REPO."
+            echo "Проверь:"
+            echo "1. Права токена (должна стоять галочка 'repo')."
+            echo "2. SSO авторизацию (если репо в организации)."
+            echo "3. Правильность имени репозитория."
+            exit 1
+          fi
+          echo "✅ Доступ к репозиторию есть."
+
+          # 3. Ищем последний запуск воркфлоу
+          echo "🔎 Поиск последних запусков воркфлоу 'Check My Functions'..."
+          # Тоже без флага --token, берет из GH_TOKEN
+          RUN_ID=$(gh run list --repo "$REPO" --workflow "Check My Functions" --limit 1 --json databaseId --jq '.[0].databaseId')
+          
+          if [ -z "$RUN_ID" ]; then
+            echo "⚠️ Не найдено запусков воркфлоу 'Check My Functions' в репо $REPO."
+            echo "Проверьте точное имя воркфлоу (name: ...) в исходном репозитории."
+            exit 1
+          else
+            echo "✅ Найден последний запуск ID: $RUN_ID"
+            
+            echo "📦 Артефакты в запуске #$RUN_ID:"
+            gh run view "$RUN_ID" --repo "$REPO" --json artifacts --jq '.artifacts[] | .name' || echo "(список пуст)"
+          fi
+
+          # 4. Скачивание
+          echo "📥 Скачивание артефактов с паттерном 'report-*'..."
+          mkdir -p ./raw-artifacts
+          
+          gh run download "$RUN_ID" \
+            --repo "$REPO" \
+            --pattern 'report-*' \
+            --dir './raw-artifacts'
+            # Флаг --token тоже не нужен, если есть GH_TOKEN
+
+          # 5. Проверка результата
+          if [ -d "./raw-artifacts" ] && [ "$(ls -A ./raw-artifacts)" ]; then
+            echo "✅ УСПЕХ! Артефакты скачаны:"
+            ls -la ./raw-artifacts
+          else
+            echo "❌ ПРОВАЛ: Папка raw-artifacts пуста."
+            exit 1
+          fi
+        shell: bash
+        continue-on-error: false
+
+      # === ШАГ 3: Организация отчетов ===
       - name: Organize Reports
         if: hashFiles('./raw-artifacts/**') != ''
         run: |
           mkdir -p ./final-site
           cd ./raw-artifacts
           
-          # Проходим по всем скачанным папкам
           for folder in report-*; do
             if [ -d "$folder" ]; then
-              # Создаем папку с именем артефакта (она уникальна: report-owner__repo-runid)
               mkdir -p ../final-site/$folder
               cp -r $folder/* ../final-site/$folder/
             fi
           done
 
-          # Генерируем главную страницу index.html
           cd ../final-site
           {
             echo "<html><head><title>Все отчеты команды</title><style>body{font-family:sans-serif;padding:20px;} ul{list-style:none;} li{margin:10px 0;} a{text-decoration:none;color:#0366d6;font-weight:bold;} a:hover{text-decoration:underline;}</style></head><body>"
